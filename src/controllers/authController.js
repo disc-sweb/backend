@@ -178,6 +178,7 @@ const authController = {
   },
   async getAllUsers(req, res) {
     try {
+      console.log('Getting all users...');
       const { data: users, error } = await supabase
         .from('users')
         .select('username, email, firstname, lastname')
