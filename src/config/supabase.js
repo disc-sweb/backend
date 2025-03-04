@@ -4,7 +4,10 @@ require('dotenv').config();
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
 
-const supabase = createClient(supabaseUrl, supabaseKey, {
+//Using TEMPORARY service key to bypass RLS. Change later
+const supabaseServiceKey = process.env.SUPBASE_SERVICE_ROLE;
+
+const supabase = createClient(supabaseUrl, supabaseServiceKey, {
   auth: {
     persistSession: false,
     autoRefreshToken: false,
