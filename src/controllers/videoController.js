@@ -101,29 +101,8 @@ const videoController = {
   },
 
   async editVideo(req, res) {
-    const videoId = req.params.videoId;
-
-    //Get form fields
-    //const { id, title, description } = req.body;
-    const videoFile = req.file;
-
-    //Check for empty fields
-    if (!videoFile || !title || !description) {
-      return res.status(400).json({
-        error: 'Error: Title, description, or file upload fields are empty',
-      });
-    }
-
-    const fileBuffer = videoFile.buffer;
-    const filePath = `Course_videos/${title}`;
-
-    const { data, error } = await supabase
-      .from('videos')
-      .update({ title, description, video_link })
-      .eq('id', videoId)
-      .single();
-
-    console.log(fileBuffer, filePath, data, error);
+    console.log('Implementation pending...');
+    console.log(req, res);
   },
 };
 
