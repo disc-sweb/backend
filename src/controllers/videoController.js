@@ -1,6 +1,6 @@
 const supabase = require('../config/supabase');
 
-const {uploadStandard} = require('./fileUploader');
+const {uploadStandard, uploadResumable} = require('./fileUploader');
 
 const videoController = {
     async videoUpload(req, res){
@@ -16,13 +16,17 @@ const videoController = {
       
         const fileBuffer = videoFile.buffer;
         const filePath = `Course_videos/${title}`;
-        const {data, error} = await uploadStandard('Videos', filePath, fileBuffer, videoFile.mimetype);
+        //const {data, error} = await uploadStandard('Videos', filePath, fileBuffer, videoFile.mimetype);
+        const something = await uploadResumable('Videos', filePath, fileBuffer, videoFile.mimetype);
+        
+        console.log(something);
+        /*
         if (error) {
           return res.status(400).json({ error: error.message });
         }
-        console.log(data);
+        */
         const urlInfo = await supabase.storage.from('Videos')
-        .getPublicUrl(data.path);
+        .getPublicUrl(filePath);
         
         const url_data = urlInfo.data;
         const url_error = urlInfo.error;
@@ -47,8 +51,8 @@ const videoController = {
         .select()
         .single();
 
-  if (error) {
-    return res.status(500).json({ message: 'Error inserting data', error: error.message });
+  if (videoError) {
+    return res.status(500).json({ message: 'Error inserting data', error: videoError.message });
   }
 
       res.status(200).json({
