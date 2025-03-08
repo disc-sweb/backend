@@ -7,8 +7,8 @@ const multer = require('multer');
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-router.post("/upload", upload.single('videoFile'), videoController.videoUpload);
-router.get("/:videoId", videoController.getVideo);
-router.put("/:videoId", videoController.editVideo);
+router.post('/upload', upload.single('videoFile'), videoController.videoUpload);
+router.get('/:videoId', videoController.getVideo);
+router.put('/:videoId', videoController.editVideo);
 
 module.exports = router;
