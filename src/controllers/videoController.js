@@ -1,6 +1,6 @@
 const supabase = require('../config/supabase');
 
-const { uploadStandard, uploadResumable } = require('./fileUploader');
+const { uploadResumable } = require('./fileUploader');
 
 const videoController = {
   async videoUpload(req, res) {
@@ -61,6 +61,7 @@ const videoController = {
         .select()
         .single();
 
+      console.log(videoData);
       if (videoError) {
         return res
           .status(500)
@@ -103,7 +104,7 @@ const videoController = {
     const videoId = req.params.videoId;
 
     //Get form fields
-    const { id, title, description } = req.body;
+    //const { id, title, description } = req.body;
     const videoFile = req.file;
 
     //Check for empty fields
@@ -121,6 +122,8 @@ const videoController = {
       .update({ title, description, video_link })
       .eq('id', videoId)
       .single();
+
+    console.log(fileBuffer, filePath, data, error);
   },
 };
 
