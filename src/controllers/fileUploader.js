@@ -70,4 +70,19 @@ async function uploadResumable(bucketName, filePath, fileBuffer, fileType) {
   });
 }
 
-module.exports = { uploadStandard, uploadResumable };
+async function getPublicURL(bucket, filePath) {
+  const urlInfo = await supabase.storage.from(bucket).getPublicUrl(filePath);
+
+  const url_data = urlInfo.data;
+  const url_error = urlInfo.error;
+  if (url_error) {
+    throw new Error('Error: Failed to create url for video upload');
+  } else {
+    console.log(url_data);
+    console.log('Signed URL:', url_data.publicUrl);
+  }
+
+  return url_data.publicUrl;
+}
+
+module.exports = { uploadStandard, uploadResumable, getPublicURL };

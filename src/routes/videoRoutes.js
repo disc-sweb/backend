@@ -9,6 +9,7 @@ const upload = multer({ storage });
 
 router.post('/upload', upload.single('videoFile'), videoController.videoUpload);
 router.get('/:videoId', videoController.getVideo);
-router.put('/:videoId', videoController.editVideo);
+router.put('/:videoId', upload.single('videoFile'), videoController.editVideo);
+router.delete('/:videoId', videoController.deleteVideo);
 
 module.exports = router;
