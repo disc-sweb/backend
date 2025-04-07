@@ -354,7 +354,7 @@ const courseController = {
   },
   async getAllCourses(req, res) {
     try {
-      const {data, error} = await supabase.from('courses').select('*')
+      const { data, error } = await supabase.from('courses').select('*');
       if (error) {
         return res.status(400).json({
           message: 'Error occured while getting courses',
@@ -362,12 +362,11 @@ const courseController = {
         });
       }
       res.status(200).json(data);
-    }
-    catch (error) {
+    } catch (error) {
       console.log('An error occured:', error);
       res.status(500).json({ error: 'Failed to get all courses' });
     }
-  }
+  },
 };
 
 module.exports = courseController;

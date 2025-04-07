@@ -49,7 +49,6 @@ app.use('/auth', authRoutes);
 app.use('/videos', videoRoutes);
 app.use('/courses', courseRoutes);
 
-
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
