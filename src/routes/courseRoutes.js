@@ -5,7 +5,6 @@ const authMiddleware = require('../middleware/authMiddleware');
 
 //Handle multipart form data
 const multer = require('multer');
-const storage = multer.memoryStorage();
 const upload = multer({ dest: 'uploads/' });
 
 router.post(
