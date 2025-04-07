@@ -3,13 +3,13 @@
   "trailingSlash": false,
   "builds": [
     {
-      "source": "src/server.js",
+      "src": "src/server.js",
       "use": "@vercel/node"
     }
   ],
   "rewrites": [
     {
-      "source": "/(.*)",
+      "src": "/(.*)",
       "destination": "/src/server.js"
     }
   ]
