@@ -21,7 +21,7 @@ async function uploadCourseVideo(title, description, videoFile) {
   const url_data = urlInfo.data;
   const url_error = urlInfo.error;
   if (url_error) {
-    throw new Error('Error: Failed to create url for video upload')
+    throw new Error('Error: Failed to create url for video upload');
   } else {
     console.log(url_data);
     console.log('Signed URL:', url_data.publicUrl);
