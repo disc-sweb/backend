@@ -3,7 +3,7 @@
   "trailingSlash": false,
   "builds": [
     {
-      "src": "src/server.js",
+      "source": "src/server.js",
       "use": "@vercel/node"
     }
   ],
