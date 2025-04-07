@@ -245,6 +245,7 @@ const courseController = {
 
       res.status(200).json({
         message: 'Course updated successfully',
+        course: courseData,
       });
     } catch (error) {
       console.log('An error occured:', error);
