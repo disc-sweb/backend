@@ -334,6 +334,7 @@ const authController = {
             user.user_metadata?.name?.split(' ')[1] ||
             null,
         };
+        console.log(newUser);
 
         const { data: insertedUser, error: insertError } = await supabase
           .from('users')
