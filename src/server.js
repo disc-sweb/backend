@@ -3,8 +3,9 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 require('dotenv').config();
 
-const courseRoutes = require('./features/courses/course.routes');
 const authRoutes = require('./routes/authRoutes');
+const videoRoutes = require('./routes/videoRoutes');
+const courseRoutes = require('./routes/courseRoutes');
 
 const app = express();
 
@@ -45,8 +46,7 @@ app.use((req, res, next) => {
 });
 
 app.use('/auth', authRoutes);
-// console.log(courseRoutes); // This should print a function, NOT an object
-
+app.use('/videos', videoRoutes);
 app.use('/courses', courseRoutes);
 
 app.get('/health', (req, res) => {
