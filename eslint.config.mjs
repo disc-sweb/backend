@@ -43,6 +43,12 @@ export default [
           rootDir: 'src',
         },
       ],
+      'prettier/prettier': [
+        'error',
+        {
+          endOfLine: 'auto',
+        },
+      ],
     },
   },
   // use with prettier

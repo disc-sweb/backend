@@ -4,7 +4,15 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 
+const STRIPE_API_KEY = process.env.STRIPE_API_KEY;
+const stripe = require('stripe')(STRIPE_API_KEY);
+
+const FRONTEND_URL = process.env.FRONTEND_URL;
+
 const { uploadResumable, getPublicURL } = require('./fileUploader');
+//Secret to use stripe webhook
+const endpointSecret =
+  'whsec_8ec46d91b5b89b89a97c76c57159951383b93bbd3630dc89326b1a927262be90';
 
 async function uploadCourseVideo(title, price, description, videoFile) {
   //Check for empty fields
@@ -295,9 +303,10 @@ const courseController = {
           error: userError.message,
         });
       }
+
       const { data: courseData, error: courseError } = await supabase
         .from('courses')
-        .select('id')
+        .select('*')
         .eq('id', courseId)
         .maybeSingle();
       if (!courseData) {
@@ -306,6 +315,34 @@ const courseController = {
           error: courseError.message,
         });
       }
+      console.log('purchasing course...');
+
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            // Use the Stripe Price ID from the course record.
+            price_data: {
+              currency: 'usd',
+              product_data: {
+                name: courseData.title,
+              },
+              unit_amount: courseData.price * 100,
+            },
+            quantity: 1,
+          },
+        ],
+        mode: 'payment',
+        success_url: `${FRONTEND_URL}/`,
+        cancel_url: `${FRONTEND_URL}/`,
+        // Attach userId and courseId as metadata so they can be retrieved in the webhook
+        metadata: {
+          userId: userId,
+          courseId: courseId,
+        },
+      });
+
+      /*
       //Link user to course
       const { error } = await supabase
         .from('user_courses')
@@ -318,10 +355,47 @@ const courseController = {
         });
       }
       res.status(200).json({ message: 'Successfully purchased course' });
+      */
+      res.status(200).json({ url: session.url });
     } catch (error) {
       console.log('An error occured:', error);
       res.status(500).json({ error: 'Failed to purchase course' });
     }
+  },
+  async stripeWebhook(req, res) {
+    console.log('In stripe webhook');
+    const sig = req.headers['stripe-signature'];
+    let event;
+
+    try {
+      event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
+    } catch (err) {
+      console.error('Webhook signature verification failed.', err.message);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    // Handle the checkout session completed event
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object;
+
+      // Retrieve the metadata we passed earlier
+      const { userId, courseId } = session.metadata;
+
+      // Link the user with the course in the database
+      const { error } = await supabase
+        .from('user_courses')
+        .insert({ user_id: userId, course_id: courseId });
+
+      if (error) {
+        console.error('Error linking course purchase:', error.message);
+        // Optionally, you might want to retry or log for further review.
+      } else {
+        console.log('Course purchase recorded successfully!');
+      }
+    }
+
+    // Respond to acknowledge receipt of the event
+    res.json({ received: true });
   },
   async getUserCourses(req, res) {
     try {

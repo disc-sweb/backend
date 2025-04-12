@@ -36,6 +36,13 @@ if (process.env.NODE_ENV !== 'production') {
     credentials: true,
   });
 }
+//Insert before express.json to deal with express.raw conflict
+const courseController = require('./controllers/courseController');
+app.use(
+  '/courses/stripeWebhook',
+  express.raw({ type: 'application/json' }),
+  courseController.stripeWebhook
+);
 
 app.use(cookieParser());
 app.use(express.json());
