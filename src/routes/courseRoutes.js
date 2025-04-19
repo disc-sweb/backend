@@ -7,18 +7,23 @@ const authMiddleware = require('../middleware/authMiddleware');
 const multer = require('multer');
 const upload = multer({ dest: 'uploads/' });
 
+const uploadCourseAssets = upload.fields([
+  { name: 'videoFile', maxCount: 1 },
+  { name: 'imageFile', maxCount: 1 },
+]);
+
 router.post(
   '/upload',
-  upload.single('videoFile'),
   authMiddleware,
+  uploadCourseAssets,
   courseController.courseUpload
 );
 router.get('/:courseId', authMiddleware, courseController.getCourse);
-router.get('/', courseController.getAllCourses);
+router.get('/', authMiddleware, courseController.getAllCourses);
 router.put(
   '/:courseId',
-  upload.single('videoFile'),
   authMiddleware,
+  uploadCourseAssets,
   courseController.editCourse
 );
 router.delete('/:courseId', authMiddleware, courseController.deleteCourse);
