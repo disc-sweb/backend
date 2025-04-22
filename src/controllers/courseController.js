@@ -9,11 +9,7 @@ const stripe = require('stripe')(STRIPE_API_KEY);
 
 const FRONTEND_URL = process.env.FRONTEND_URL;
 
-const {
-  uploadResumable,
-  getPublicURL,
-  uploadStandard,
-} = require('./fileUploader');
+const { uploadResumable, getPublicURL } = require('./fileUploader');
 //Secret to use stripe webhook
 const endpointSecret =
   'whsec_8ec46d91b5b89b89a97c76c57159951383b93bbd3630dc89326b1a927262be90';
