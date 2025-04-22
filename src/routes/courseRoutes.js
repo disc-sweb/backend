@@ -27,7 +27,11 @@ router.put(
   courseController.editCourse
 );
 router.delete('/:courseId', authMiddleware, courseController.deleteCourse);
-router.post('/purchaseCourse', courseController.purchaseCourse);
+router.post(
+  '/purchaseCourse/:courseId',
+  authMiddleware,
+  courseController.purchaseCourse
+);
 router.post('/getUserCourses', courseController.getUserCourses);
 
 module.exports = router;

@@ -364,7 +364,12 @@ const courseController = {
 
   async purchaseCourse(req, res) {
     try {
-      const { userId, courseId } = req.body;
+      const user = await getUserInfo(req.user);
+      if (user == null) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      const userId = user.id;
+      const courseId = req.params.courseId;
 
       //Check for valid user and course id
       const { data: userData, error: userError } = await supabase
