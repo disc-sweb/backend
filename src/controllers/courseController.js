@@ -365,7 +365,7 @@ const courseController = {
         return res.status(404).json({ error: 'User not found' });
       }
       const userId = user.id;
-      const courseId = req.params.courseId;
+      const courseId = parseInt(req.params.courseId, 10);
 
       //Check for valid user and course id
       const { data: userData, error: userError } = await supabase
@@ -409,7 +409,7 @@ const courseController = {
           },
         ],
         mode: 'payment',
-        success_url: `${FRONTEND_URL}/`,
+        success_url: `${FRONTEND_URL}/courses/${courseId}/confirmation`,
         cancel_url: `${FRONTEND_URL}/`,
         // Attach userId and courseId as metadata so they can be retrieved in the webhook
         metadata: {
@@ -522,6 +522,7 @@ const courseController = {
       }
 
       const ownedIds = userCourses.map((elem) => elem.courses.id);
+      const userCoursesFiltered = userCourses.map((elem) => elem.courses);
       const { data: allCourses, error: allCoursesError } = await supabase
         .from('courses')
         .select(
@@ -534,9 +535,10 @@ const courseController = {
         });
       }
       const nonUserCourses = allCourses.filter((c) => !ownedIds.includes(c.id));
-      res
-        .status(200)
-        .json({ userCourses: userCourses, nonUserCourses: nonUserCourses });
+      res.status(200).json({
+        userCourses: userCoursesFiltered,
+        nonUserCourses: nonUserCourses,
+      });
     } catch (error) {
       console.log('An error occured:', error);
       res.status(500).json({ error: 'Failed to get all courses' });

@@ -32,6 +32,7 @@ router.post(
   authMiddleware,
   courseController.purchaseCourse
 );
+router.post('/stripeWebhook', courseController.stripeWebhook);
 router.post('/getUserCourses', courseController.getUserCourses);
 
 module.exports = router;
