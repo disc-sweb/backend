@@ -14,17 +14,45 @@ const { uploadResumable, getPublicURL } = require('./fileUploader');
 const endpointSecret =
   'whsec_8ec46d91b5b89b89a97c76c57159951383b93bbd3630dc89326b1a927262be90';
 
-async function uploadCourseVideo(title, price, description, videoFile) {
+async function uploadCourseVideo(
+  title,
+  price,
+  description,
+  form_link,
+  course_type,
+  videoFile,
+  fileType
+) {
   //Check for empty fields
-  if (!videoFile || !title || !price || !description) {
+  if (
+    !videoFile ||
+    !title ||
+    !price ||
+    !description ||
+    !form_link ||
+    !course_type
+  ) {
+    console.log(title, price, description, form_link, course_type);
     throw new Error(
-      'Error: Title, price, description, or file upload fields are empty'
+      'Error: Title, price, description, form_link, course_type, or file upload fields are empty'
     );
   }
 
   const bucket = 'Videos';
   const filePath = `Course_videos/${title}`;
-  await uploadResumable(bucket, filePath, videoFile, videoFile.mimetype);
+  console.log('Video mimetype: ', fileType);
+  await uploadResumable(bucket, filePath, videoFile, fileType);
+
+  const publicUrl = await getPublicURL(bucket, filePath);
+  return publicUrl;
+}
+
+async function uploadCourseImage(title, imageFile, fileType) {
+  console.log('Image type: ', fileType);
+  console.log('Image file: ', imageFile);
+  const bucket = 'Images';
+  const filePath = `Course_images/${title}`;
+  await uploadResumable(bucket, filePath, imageFile, fileType);
 
   const publicUrl = await getPublicURL(bucket, filePath);
   return publicUrl;
@@ -115,18 +143,30 @@ const courseController = {
       }
 
       //Get fields
-      const { title, description } = req.body;
+      const { title, description, formLink, courseType } = req.body;
       let price = parseFloat(req.body.price);
-      const video = req.file;
+      console.log('Files: ', req.files);
+      const video = req.files.videoFile?.[0]; // { filename, path, mimetype, ... }
+      const image = req.files.imageFile?.[0];
       const videoFile = fs.readFileSync(video.path);
+      const imageFile = fs.readFileSync(image.path);
       //Upload video to videos table
       const video_link = await uploadCourseVideo(
         title,
         price,
         description,
-        videoFile
+        formLink,
+        courseType,
+        videoFile,
+        video.mimetype
       );
       const restricted_video_link = await trimVideo(video, title);
+      const image_link = await uploadCourseImage(
+        title,
+        imageFile,
+        image.mimetype
+      );
+
       //Update course database
       const { data: courseData, error: courseError } = await supabase
         .from('courses')
@@ -137,6 +177,9 @@ const courseController = {
             description: description,
             video_link: video_link,
             restricted_video_link: restricted_video_link,
+            cover_image_link: image_link,
+            form_link: formLink,
+            course_type: courseType,
           },
         ])
         .select()
@@ -163,12 +206,11 @@ const courseController = {
     try {
       const { courseId } = req.params;
 
-      const user = getUserInfo(req.user);
+      const user = await getUserInfo(req.user);
       if (user == null) {
         return res.status(404).json({ error: 'User not found' });
       }
       const userId = user.id;
-
       //Get courses
       const { data: courses, error: courseError } = await supabase
         .from('user_courses')
@@ -176,14 +218,18 @@ const courseController = {
         .eq('user_id', userId)
         .eq('course_id', courseId);
 
+      console.log('user: ', user);
+
       if (courseError) {
         return res.status(500).json({ error: courseError });
       }
-      console.log(courses);
+      console.log('Courses: ', courses);
       if (courses.length === 0) {
         const { data: course_data, error: dataError } = await supabase
           .from('courses')
-          .select('id, title, price, description, restricted_video_link')
+          .select(
+            'id, title, price, description, restricted_video_link, upload_date, cover_image_link, form_link, course_type'
+          )
           .eq('id', courseId)
           .single();
 
@@ -194,7 +240,9 @@ const courseController = {
       } else {
         const { data: course_data, error: dataError } = await supabase
           .from('courses')
-          .select('id, title, price, description, video_link')
+          .select(
+            'id, title, price, description, video_link, upload_date, cover_image_link, form_link, course_type'
+          )
           .eq('id', courseId)
           .single();
 
@@ -218,28 +266,51 @@ const courseController = {
           .status(500)
           .json({ error: 'User does not have course upload permissions' });
       }
+
       //Get fields
-      const courseId = req.params.courseId;
-      const { title, description } = req.body;
+      const { title, description, formLink, courseType } = req.body;
       let price = parseFloat(req.body.price);
-      const videoFile = req.file;
-      //Upload video to videos table
-      const video_link = await uploadCourseVideo(
-        title,
-        price,
-        description,
-        videoFile
-      );
+      const video = req.files.videoFile?.[0]; // { filename, path, mimetype, ... }
+      const image = req.files.imageFile?.[0];
+      const updateObj = {
+        title: title,
+        price: price,
+        description: description,
+        form_link: formLink,
+        course_type: courseType,
+      };
+      const courseId = req.params.courseId;
+      if (video) {
+        const videoFile = fs.readFileSync(video.path);
+        //Upload video to videos table
+        const video_link = await uploadCourseVideo(
+          title,
+          price,
+          description,
+          formLink,
+          courseType,
+          videoFile,
+          video.mimetype
+        );
+        const restricted_video_link = await trimVideo(video, title);
+        updateObj.video_link = video_link;
+        updateObj.restricted_video_link = restricted_video_link;
+      }
+      if (image) {
+        const imageFile = fs.readFileSync(image.path);
+        const image_link = await uploadCourseImage(
+          title,
+          imageFile,
+          image.mimetype
+        );
+        updateObj.cover_image_link = image_link;
+      }
 
       //Update database
       const { data: courseData, error: courseError } = await supabase
         .from('courses')
         .update({
-          title: title,
-          price: price,
-          description: description,
-          video_link: video_link,
-          upload_date: new Date().toISOString(),
+          ...updateObj,
         })
         .eq('id', courseId)
         .select()
@@ -289,7 +360,12 @@ const courseController = {
 
   async purchaseCourse(req, res) {
     try {
-      const { userId, courseId } = req.body;
+      const user = await getUserInfo(req.user);
+      if (user == null) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      const userId = user.id;
+      const courseId = parseInt(req.params.courseId, 10);
 
       //Check for valid user and course id
       const { data: userData, error: userError } = await supabase
@@ -333,7 +409,7 @@ const courseController = {
           },
         ],
         mode: 'payment',
-        success_url: `${FRONTEND_URL}/`,
+        success_url: `${FRONTEND_URL}/courses/${courseId}/confirmation`,
         cancel_url: `${FRONTEND_URL}/`,
         // Attach userId and courseId as metadata so they can be retrieved in the webhook
         metadata: {
@@ -341,21 +417,6 @@ const courseController = {
           courseId: courseId,
         },
       });
-
-      /*
-      //Link user to course
-      const { error } = await supabase
-        .from('user_courses')
-        .insert({ user_id: userId, course_id: courseId });
-
-      if (error) {
-        return res.status(400).json({
-          message: 'Error occured while purchasing course',
-          error: error.message,
-        });
-      }
-      res.status(200).json({ message: 'Successfully purchased course' });
-      */
       res.status(200).json({ url: session.url });
     } catch (error) {
       console.log('An error occured:', error);
@@ -399,7 +460,11 @@ const courseController = {
   },
   async getUserCourses(req, res) {
     try {
-      const { userId } = req.body;
+      const user = await getUserInfo(req.user);
+      if (user == null) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      const userId = user.id;
       const { data: userData, error: userError } = await supabase
         .from('users')
         .select('id')
@@ -429,14 +494,51 @@ const courseController = {
   },
   async getAllCourses(req, res) {
     try {
-      const { data, error } = await supabase.from('courses').select('*');
+      const user = await getUserInfo(req.user);
+      if (user == null) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      const userId = user.id;
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', userId)
+        .maybeSingle();
+      if (!userData) {
+        return res.status(400).json({
+          message: 'Invalid user id',
+          error: userError.message,
+        });
+      }
+      const { data: userCourses, error } = await supabase
+        .from('user_courses')
+        .select('courses (*)')
+        .eq('user_id', userId);
       if (error) {
         return res.status(400).json({
-          message: 'Error occured while getting courses',
+          message: 'Error occured while getting user courses',
           error: error.message,
         });
       }
-      res.status(200).json(data);
+
+      const ownedIds = userCourses.map((elem) => elem.courses.id);
+      const userCoursesFiltered = userCourses.map((elem) => elem.courses);
+      const { data: allCourses, error: allCoursesError } = await supabase
+        .from('courses')
+        .select(
+          'id, title, price, description, upload_date, cover_image_link, form_link, course_type'
+        );
+      if (allCoursesError) {
+        return res.status(400).json({
+          message: 'Error occured while getting non user courses',
+          error: allCoursesError.message,
+        });
+      }
+      const nonUserCourses = allCourses.filter((c) => !ownedIds.includes(c.id));
+      res.status(200).json({
+        userCourses: userCoursesFiltered,
+        nonUserCourses: nonUserCourses,
+      });
     } catch (error) {
       console.log('An error occured:', error);
       res.status(500).json({ error: 'Failed to get all courses' });
