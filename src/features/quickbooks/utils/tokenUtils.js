@@ -1,8 +1,8 @@
 // src/features/quickbooks/utils/tokenUtils.js
 // Helpers for loading and saving QuickBooks tokens using Supabase
 
-// Import your initialized Supabase client
-const supabase = require('../../../../config/supabase');
+// Import your service-role Supabase client (has write privileges)
+const supabase = require('../../../config/supabase');
 
 /**
  * Fetch stored QuickBooks tokens for a given merchant.
@@ -29,11 +29,11 @@ async function loadTokens(merchantId) {
   }
 
   return {
-    merchantId:    data.merchant_id,
-    realmId:       data.realm_id,
-    accessToken:   data.access_token,
-    refreshToken:  data.refresh_token,
-    expiresAt:     data.expires_at
+    merchantId:   data.merchant_id,
+    realmId:      data.realm_id,
+    accessToken:  data.access_token,
+    refreshToken: data.refresh_token,
+    expiresAt:    data.expires_at
   };
 }
 

@@ -31,3 +31,13 @@ const authMiddleware = async (req, res, next) => {
 };
 
 module.exports = authMiddleware;
+
+// src/middleware/adminMiddleware.js
+module.exports = function requireAdmin(req, res, next) {
+  // supabase user metadata is under user_metadata
+  console.log(req.user)
+  if (req.user?.user_metadata?.role === 'admin') {
+    return next();
+  }
+  return res.status(403).json({ error: 'Admin privileges required' });
+};
