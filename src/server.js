@@ -8,6 +8,8 @@ const videoRoutes = require('./routes/videoRoutes');
 const courseRoutes = require('./routes/courseRoutes');
 const quickbooksRoutes = require('./features/quickbooks/routes/quickbooksRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const customersRoutes = require('./features/quickbooks/routes/customersRoutes');
+const debugRoutes = require('./features/quickbooks/routes/debugRoutes');
 
 
 const app = express();
@@ -48,6 +50,8 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use('/debug', debugRoutes);
+app.use('/quickbooks/customers', customersRoutes);
 app.use('/auth', authRoutes);
 app.use('/videos', videoRoutes);
 app.use('/courses', courseRoutes);

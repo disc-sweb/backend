@@ -1,7 +1,8 @@
 // src/features/quickbooks/controller/quickbooksController.js
 
-const { generateConsentUrl, handleAuthCallback } = require('../services/quickbooksAuthService');
-
+const { generateConsentUrl, handleAuthCallback } = require('../services/auth/quickbooksAuthService');
+const { qboRequest } = require('../utils/qboClient');
+const supabase = require('../../../config/supabase')
 /**
  * Redirect merchant to Intuit’s consent screen
  */
@@ -27,7 +28,7 @@ async function connectQuickBooks(req, res, next) {
 async function handleQuickBooksCallback(req, res, next) {
   try {
     console.log('→ full callback URL:', req.protocol + '://' + req.get('host') + req.originalUrl);
-    const merchantId = 1; // hard-coded for now
+    const merchantId = req.user?.id || '528e4d28-b24a-47f1-a66b-d7ddd507b7b9';
     const out = await handleAuthCallback(req.originalUrl, merchantId);
     console.log('✅ tokens saved →', out);
     return res.send('QuickBooks connected successfully!');
@@ -43,9 +44,123 @@ async function handleQuickBooksCallback(req, res, next) {
   }
 }
 
+async function createInvoice(req, res, next) {
+  try {
+    // in test mode the client will POST both IDs explicitly:
+    const { merchantId, customerId, ...otherFields } = req.body;
+
+    if (!merchantId || !customerId) {
+      return res.status(400).json({ error: 'merchantId and customerId are required' });
+    }
+
+    // build the QBO payload including CustomerRef
+    const qboPayload = {
+      ...otherFields,
+      CustomerRef: { value: customerId },
+    };
+
+    // 1) Create the invoice in QuickBooks…
+    const { Invoice: invoice } = await qboRequest(
+      merchantId,
+      '/invoice?minorversion=65',
+      {
+        method: 'POST',
+        body: JSON.stringify(qboPayload),
+      }
+    );
+
+    // 2) Persist it to your own quickbooks_invoices table via Supabase
+    const { data, error } = await supabase
+      .from('quickbooks_invoices')
+      .upsert(
+        {
+          quickbooks_id: invoice.Id,
+          merchant_id:   merchantId,
+          customer_id:   customerId,
+          doc_number:    invoice.DocNumber,
+          txn_date:      invoice.TxnDate,
+          due_date:      invoice.DueDate,
+          total_amt:     invoice.TotalAmt,
+        },
+        { onConflict: 'quickbooks_id' }
+      );
+
+    if (error) {
+      console.error('Supabase error saving invoice:', error);
+      throw error;
+    }
+
+    res.status(201).json(invoice);
+  } catch (err) {
+    next(err);
+  }
+}
+// POST /api/customers
+// body: { merchantId, internalCustomerId, firstName, lastName, email }
+async function createCustomer(req, res, next) {
+  try {
+    const { merchantId, internalCustomerId, firstName, lastName, email } = req.body;
+
+    if (!merchantId || !internalCustomerId || !firstName || !lastName || !email) {
+      return res.status(400).json({
+        error: 'merchantId, internalCustomerId, firstName, lastName & email are required'
+      });
+    }
+
+    // 1) Upsert the internal customer row
+    const fullName = `${firstName} ${lastName}`;
+    const { data: user, error: upsertErr } = await supabase
+      .from('customers')
+      .upsert(
+        {
+          id:    internalCustomerId,
+          name:  fullName,
+          email
+        },
+        { onConflict: 'id' }
+      )
+      .single();
+    if (upsertErr) throw upsertErr;
+
+    // 2) Create in QuickBooks
+    const payload = {
+      GivenName:       firstName,
+      FamilyName:      lastName,
+      DisplayName:     fullName,
+      PrimaryEmailAddr:{ Address: email }
+    };
+    const { Customer: qboCustomer } = await qboRequest(
+      merchantId,
+      '/customer?minorversion=65',
+      {
+        method: 'POST',
+        body:   JSON.stringify(payload)
+      }
+    );
+
+    // 3) Save QBO customer ID back on your row
+    const { error: updateErr } = await supabase
+      .from('customers')
+      .update({ qbo_customer_id: qboCustomer.Id })
+      .eq('id', internalCustomerId);
+    if (updateErr) throw updateErr;
+
+    res.status(201).json({
+      internalCustomerId,
+      qboCustomerId: qboCustomer.Id,
+      fullName
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+
 
 
 module.exports = {
   connectQuickBooks,
-  handleQuickBooksCallback
+  handleQuickBooksCallback,
+  createInvoice,
+  createCustomer
 };

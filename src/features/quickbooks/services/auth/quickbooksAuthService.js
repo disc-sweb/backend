@@ -7,8 +7,8 @@ const {
   environment,
   redirectUri,
   scopes
-} = require('../../../config/quickbooks');
-const { loadTokens, saveTokens } = require('../utils/tokenUtils');
+} = require('../../../../config/quickbooks');
+const { loadTokens, saveTokens } = require('../../utils/tokenUtils');
 
 // Initialize the Intuit OAuth client
 const oauthClient = new OAuthClient({
