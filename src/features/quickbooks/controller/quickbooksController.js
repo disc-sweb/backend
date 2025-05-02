@@ -1,8 +1,10 @@
 // src/features/quickbooks/controller/quickbooksController.js
 
 const { generateConsentUrl, handleAuthCallback } = require('../services/auth/quickbooksAuthService');
+const createInvoiceService = require('../services/invoice/createInvoice');
 const { qboRequest } = require('../utils/qboClient');
-const supabase = require('../../../config/supabase')
+const supabase = require('../../../config/supabase');
+
 /**
  * Redirect merchant to Intuit’s consent screen
  */
@@ -22,14 +24,10 @@ async function connectQuickBooks(req, res, next) {
  * Handle Intuit’s redirect back to your app:
  * store tokens, then confirm connection.
  */
-
-
-// src/features/quickbooks/controller/quickbooksController.js
 async function handleQuickBooksCallback(req, res, next) {
   try {
     console.log('→ full callback URL:', req.protocol + '://' + req.get('host') + req.originalUrl);
-    const merchantId = req.user?.id || '528e4d28-b24a-47f1-a66b-d7ddd507b7b9';
-    const out = await handleAuthCallback(req.originalUrl, merchantId);
+    const out = await handleAuthCallback(req.originalUrl);
     console.log('✅ tokens saved →', out);
     return res.send('QuickBooks connected successfully!');
   } catch (err) {
@@ -44,66 +42,30 @@ async function handleQuickBooksCallback(req, res, next) {
   }
 }
 
+/**
+ * Create an invoice
+ */
 async function createInvoice(req, res, next) {
   try {
-    // in test mode the client will POST both IDs explicitly:
-    const { merchantId, customerId, ...otherFields } = req.body;
-
-    if (!merchantId || !customerId) {
-      return res.status(400).json({ error: 'merchantId and customerId are required' });
-    }
-
-    // build the QBO payload including CustomerRef
-    const qboPayload = {
-      ...otherFields,
-      CustomerRef: { value: customerId },
-    };
-
-    // 1) Create the invoice in QuickBooks…
-    const { Invoice: invoice } = await qboRequest(
-      merchantId,
-      '/invoice?minorversion=65',
-      {
-        method: 'POST',
-        body: JSON.stringify(qboPayload),
-      }
-    );
-
-    // 2) Persist it to your own quickbooks_invoices table via Supabase
-    const { data, error } = await supabase
-      .from('quickbooks_invoices')
-      .upsert(
-        {
-          quickbooks_id: invoice.Id,
-          merchant_id:   merchantId,
-          customer_id:   customerId,
-          doc_number:    invoice.DocNumber,
-          txn_date:      invoice.TxnDate,
-          due_date:      invoice.DueDate,
-          total_amt:     invoice.TotalAmt,
-        },
-        { onConflict: 'quickbooks_id' }
-      );
-
-    if (error) {
-      console.error('Supabase error saving invoice:', error);
-      throw error;
-    }
-
+    const invoice = await createInvoiceService(req.body);
     res.status(201).json(invoice);
   } catch (err) {
     next(err);
   }
 }
-// POST /api/customers
-// body: { merchantId, internalCustomerId, firstName, lastName, email }
+
+/**
+ * Create a customer
+ * POST /api/customers
+ * body: { internalCustomerId, firstName, lastName, email }
+ */
 async function createCustomer(req, res, next) {
   try {
-    const { merchantId, internalCustomerId, firstName, lastName, email } = req.body;
+    const { internalCustomerId, firstName, lastName, email } = req.body;
 
-    if (!merchantId || !internalCustomerId || !firstName || !lastName || !email) {
+    if (!internalCustomerId || !firstName || !lastName || !email) {
       return res.status(400).json({
-        error: 'merchantId, internalCustomerId, firstName, lastName & email are required'
+        error: 'internalCustomerId, firstName, lastName & email are required'
       });
     }
 
@@ -130,7 +92,6 @@ async function createCustomer(req, res, next) {
       PrimaryEmailAddr:{ Address: email }
     };
     const { Customer: qboCustomer } = await qboRequest(
-      merchantId,
       '/customer?minorversion=65',
       {
         method: 'POST',
@@ -154,9 +115,6 @@ async function createCustomer(req, res, next) {
     next(err);
   }
 }
-
-
-
 
 module.exports = {
   connectQuickBooks,
