@@ -1,107 +1,23 @@
+const cloudinary = require('cloudinary').v2;
 const supabase = require('../config/supabase');
-const ffmpeg = require('fluent-ffmpeg');
-const path = require('path');
-const fs = require('fs');
-const { v4: uuidv4 } = require('uuid');
+require('uuid');
 
 const STRIPE_API_KEY = process.env.STRIPE_API_KEY;
 const stripe = require('stripe')(STRIPE_API_KEY);
 
 const FRONTEND_URL = process.env.FRONTEND_URL;
 
-const { uploadResumable, getPublicURL } = require('./fileUploader');
+cloudinary.config({
+  secure: true,
+});
+
+const {
+  cloudinaryVideoUpload,
+  cloudinaryImageUpload,
+} = require('./fileUploader');
 //Secret to use stripe webhook
 const endpointSecret =
   'whsec_8ec46d91b5b89b89a97c76c57159951383b93bbd3630dc89326b1a927262be90';
-
-async function uploadCourseVideo(
-  title,
-  price,
-  description,
-  form_link,
-  course_type,
-  videoFile,
-  fileType
-) {
-  //Check for empty fields
-  if (
-    !videoFile ||
-    !title ||
-    !price ||
-    !description ||
-    !form_link ||
-    !course_type
-  ) {
-    console.log(title, price, description, form_link, course_type);
-    throw new Error(
-      'Error: Title, price, description, form_link, course_type, or file upload fields are empty'
-    );
-  }
-
-  const bucket = 'Videos';
-  const filePath = `Course_videos/${title}`;
-  console.log('Video mimetype: ', fileType);
-  await uploadResumable(bucket, filePath, videoFile, fileType);
-
-  const publicUrl = await getPublicURL(bucket, filePath);
-  return publicUrl;
-}
-
-async function uploadCourseImage(title, imageFile, fileType) {
-  console.log('Image type: ', fileType);
-  console.log('Image file: ', imageFile);
-  const bucket = 'Images';
-  const filePath = `Course_images/${title}`;
-  await uploadResumable(bucket, filePath, imageFile, fileType);
-
-  const publicUrl = await getPublicURL(bucket, filePath);
-  return publicUrl;
-}
-
-async function trimVideo(video, title) {
-  const inputPath = video.path;
-  const startTime = '00:00:00';
-  const duration = 30;
-  const trimmedFilename = `trimmed-${uuidv4()}.mp4`;
-  const trimmedPath = path.join('uploads', trimmedFilename);
-
-  //Start trimming video using ffmpeg
-  return new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
-      .setStartTime(startTime)
-      .setDuration(duration)
-      .output(trimmedPath)
-      .on('end', async () => {
-        try {
-          //Upload trimmed video to bucket
-          const fileContent = fs.readFileSync(trimmedPath);
-          const bucket = 'videos-restricted';
-          const filePath = `Course_videos/${title}`;
-          await uploadResumable(bucket, filePath, fileContent, video.mimetype);
-
-          const publicUrl = await getPublicURL(bucket, filePath);
-
-          //Clean up by unlinking files after upload
-          fs.unlinkSync(inputPath);
-          fs.unlinkSync(trimmedPath);
-
-          console.log('Trimmed video upload succeeded');
-          resolve(publicUrl);
-        } catch (err) {
-          console.error('Error:', err);
-          fs.unlinkSync(inputPath);
-          fs.unlinkSync(trimmedPath);
-          reject(new Error('Server error during upload.'));
-        }
-      })
-      .on('error', (err) => {
-        console.error('FFmpeg error:', err);
-        fs.unlinkSync(inputPath);
-        reject(new Error('Failed to trim video.'));
-      })
-      .run();
-  });
-}
 
 async function getUserInfo(userInfo) {
   const { email } = userInfo;
@@ -138,7 +54,7 @@ const courseController = {
       const admin = await checkAdmin(req);
       if (!admin) {
         return res
-          .status(500)
+          .status(403)
           .json({ error: 'User does not have course upload permissions' });
       }
 
@@ -148,24 +64,22 @@ const courseController = {
       console.log('Files: ', req.files);
       const video = req.files.videoFile?.[0]; // { filename, path, mimetype, ... }
       const image = req.files.imageFile?.[0];
-      const videoFile = fs.readFileSync(video.path);
-      const imageFile = fs.readFileSync(image.path);
-      //Upload video to videos table
-      const video_link = await uploadCourseVideo(
-        title,
-        price,
-        description,
-        formLink,
-        courseType,
-        videoFile,
-        video.mimetype
+
+      if (!video || !image || !title || !price || !description) {
+        return res.status(400).json({
+          error:
+            'Error: Title, price, description, form_link, course_type, or file upload fields are empty',
+        });
+      }
+      console.log('Uploading video...');
+      const { url: video_link } = await cloudinaryVideoUpload(video.path);
+      console.log('Uploading restricted video...');
+      const { url: restricted_video_link } = await cloudinaryVideoUpload(
+        video.path,
+        true
       );
-      const restricted_video_link = await trimVideo(video, title);
-      const image_link = await uploadCourseImage(
-        title,
-        imageFile,
-        image.mimetype
-      );
+      console.log('Uploading image...');
+      const { url: image_link } = await cloudinaryImageUpload(image.path);
 
       //Update course database
       const { data: courseData, error: courseError } = await supabase
@@ -263,7 +177,7 @@ const courseController = {
       const admin = await checkAdmin(req);
       if (!admin) {
         return res
-          .status(500)
+          .status(403)
           .json({ error: 'User does not have course upload permissions' });
       }
 
@@ -281,28 +195,16 @@ const courseController = {
       };
       const courseId = req.params.courseId;
       if (video) {
-        const videoFile = fs.readFileSync(video.path);
-        //Upload video to videos table
-        const video_link = await uploadCourseVideo(
-          title,
-          price,
-          description,
-          formLink,
-          courseType,
-          videoFile,
-          video.mimetype
+        const video_link = await cloudinaryVideoUpload(video.path);
+        const restricted_video_link = await cloudinaryVideoUpload(
+          video.path,
+          true
         );
-        const restricted_video_link = await trimVideo(video, title);
         updateObj.video_link = video_link;
         updateObj.restricted_video_link = restricted_video_link;
       }
       if (image) {
-        const imageFile = fs.readFileSync(image.path);
-        const image_link = await uploadCourseImage(
-          title,
-          imageFile,
-          image.mimetype
-        );
+        const image_link = await cloudinaryImageUpload(image.path);
         updateObj.cover_image_link = image_link;
       }
 
