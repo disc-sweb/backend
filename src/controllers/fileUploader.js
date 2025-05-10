@@ -1,5 +1,9 @@
 const supabase = require('../config/supabase');
 const tus = require('tus-js-client');
+const cloudinary = require('cloudinary').v2;
+cloudinary.config({
+  secure: true,
+});
 const projectId = process.env.SUPABASE_PROJECT_ID;
 
 async function uploadStandard(bucketName, filePath, fileBuffer, fileType) {
@@ -79,4 +83,65 @@ async function getPublicURL(bucket, filePath) {
   return url_data.publicUrl;
 }
 
-module.exports = { uploadStandard, uploadResumable, getPublicURL };
+function uploadLargePromise(filePath, opts) {
+  return new Promise((resolve, reject) => {
+    cloudinary.uploader.upload_large(filePath, opts, (err, res) =>
+      err ? reject(err) : resolve(res)
+    );
+  });
+}
+
+async function cloudinaryVideoUpload(filePath, trim = false) {
+  const opts = {
+    resource_type: 'video',
+    chunk_size: 50 * 1024 * 1024,
+    eager_async: true,
+    eager: [
+      {
+        width: 640,
+        height: 360,
+        crop: 'pad',
+        format: 'mp4',
+        quality: 'auto',
+        bit_rate: trim ? '400k' : '600k',
+        video_codec: 'h264',
+        audio_codec: 'aac',
+        compression: {
+          quality: 'auto',
+          level: trim ? 'best' : 'better',
+        },
+      },
+    ],
+  };
+  if (trim) {
+    opts.transformation = [{ duration: 120 }];
+  }
+
+  const result = await uploadLargePromise(filePath, opts);
+  const url = result.secure_url;
+  return { url, publicId: result.public_id };
+}
+
+async function cloudinaryImageUpload(filePath) {
+  const result = await cloudinary.uploader.upload(filePath, {
+    resource_type: 'image',
+    chunk_size: 100000000,
+    eager: [
+      {
+        width: 640,
+        height: 360,
+        crop: 'pad',
+        format: 'jpg',
+      },
+    ],
+  });
+  return { url: result.secure_url, publicId: result.public_id };
+}
+
+module.exports = {
+  uploadStandard,
+  uploadResumable,
+  getPublicURL,
+  cloudinaryVideoUpload,
+  cloudinaryImageUpload,
+};
