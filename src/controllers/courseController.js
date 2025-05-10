@@ -243,6 +243,25 @@ const courseController = {
           .json({ error: 'User does not have course upload permissions' });
       }
       const courseId = req.params.courseId;
+      const { data: enrolledUsers } = await supabase
+        .from('user_courses')
+        .select('*')
+        .eq('course_id', courseId);
+
+      console.log('Enrolled users for this course:', enrolledUsers);
+
+      const { error: userCoursesError } = await supabase
+        .from('user_courses')
+        .delete()
+        .eq('course_id', courseId);
+
+      if (userCoursesError) {
+        console.error('Failed to delete from user_courses:', userCoursesError);
+        return res.status(500).json({
+          message: 'Failed to remove course from user courses',
+          error: userCoursesError.message,
+        });
+      }
       const { error } = await supabase
         .from('courses')
         .delete()

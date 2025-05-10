@@ -15,6 +15,8 @@ const corsOptions = {
       process.env.FRONTEND_URL,
       process.env.FRONTEND_URL_DEV,
     ];
+    console.log('Incoming origin:', origin);
+    console.log('Allowed origins:', allowedOrigins);
 
     if (allowedOrigins.includes(origin) || !origin) {
       callback(null, true);
