@@ -195,8 +195,8 @@ const courseController = {
       };
       const courseId = req.params.courseId;
       if (video) {
-        const video_link = await cloudinaryVideoUpload(video.path);
-        const restricted_video_link = await cloudinaryVideoUpload(
+        const { url: video_link } = await cloudinaryVideoUpload(video.path);
+        const { url: restricted_video_link } = await cloudinaryVideoUpload(
           video.path,
           true
         );
@@ -204,7 +204,7 @@ const courseController = {
         updateObj.restricted_video_link = restricted_video_link;
       }
       if (image) {
-        const image_link = await cloudinaryImageUpload(image.path);
+        const { url: image_link } = await cloudinaryImageUpload(image.path);
         updateObj.cover_image_link = image_link;
       }
 
@@ -239,10 +239,23 @@ const courseController = {
       const admin = await checkAdmin(req);
       if (!admin) {
         return res
-          .status(500)
+          .status(403)
           .json({ error: 'User does not have course upload permissions' });
       }
       const courseId = req.params.courseId;
+
+      const { error: user_courses_error } = await supabase
+        .from('user_courses')
+        .delete()
+        .eq('course_id', courseId);
+
+      if (user_courses_error) {
+        return res.status(500).json({
+          message: 'Could not delete enrollments',
+          error: user_courses_error.message,
+        });
+      }
+
       const { error } = await supabase
         .from('courses')
         .delete()
@@ -253,6 +266,7 @@ const courseController = {
           .status(400)
           .json({ message: 'Invalid course id', error: error.message });
       }
+
       res.status(200).json({ message: 'Successfully Deleted Course' });
     } catch (error) {
       console.log('An error occured:', error);
