@@ -59,25 +59,34 @@ const courseController = {
       }
 
       //Get fields
-      const { title, description, formLink, courseType } = req.body;
+      const { title, description, formLink, courseType, language } = req.body;
       let price = parseFloat(req.body.price);
       console.log('Files: ', req.files);
       const video = req.files.videoFile?.[0]; // { filename, path, mimetype, ... }
       const image = req.files.imageFile?.[0];
 
-      if (!video || !image || !title || !price || !description) {
+      if (
+        !courseType ||
+        !image ||
+        !title ||
+        !price ||
+        !description ||
+        !language ||
+        (courseType === 'Online' && !video)
+      ) {
         return res.status(400).json({
-          error:
-            'Error: Title, price, description, form_link, course_type, or file upload fields are empty',
+          error: 'Error: Required field is empty',
         });
       }
-      console.log('Uploading video...');
-      const { url: video_link } = await cloudinaryVideoUpload(video.path);
-      console.log('Uploading restricted video...');
-      const { url: restricted_video_link } = await cloudinaryVideoUpload(
-        video.path,
-        true
-      );
+      let video_link = null;
+      let restricted_video_link = null;
+      if (video) {
+        console.log('Uploading video...');
+        video_link = (await cloudinaryVideoUpload(video.path)).url;
+        console.log('Uploading restricted video...');
+        restricted_video_link = await cloudinaryVideoUpload(video.path, true)
+          .url;
+      }
       console.log('Uploading image...');
       const { url: image_link } = await cloudinaryImageUpload(image.path);
 
@@ -94,6 +103,7 @@ const courseController = {
             cover_image_link: image_link,
             form_link: formLink,
             course_type: courseType,
+            language: language,
           },
         ])
         .select()
@@ -142,7 +152,7 @@ const courseController = {
         const { data: course_data, error: dataError } = await supabase
           .from('courses')
           .select(
-            'id, title, price, description, restricted_video_link, upload_date, cover_image_link, form_link, course_type'
+            'id, title, price, description, restricted_video_link, upload_date, cover_image_link, form_link, course_type, language'
           )
           .eq('id', courseId)
           .single();
@@ -155,7 +165,7 @@ const courseController = {
         const { data: course_data, error: dataError } = await supabase
           .from('courses')
           .select(
-            'id, title, price, description, video_link, upload_date, cover_image_link, form_link, course_type'
+            'id, title, price, description, video_link, upload_date, cover_image_link, form_link, course_type, language'
           )
           .eq('id', courseId)
           .single();
@@ -182,7 +192,7 @@ const courseController = {
       }
 
       //Get fields
-      const { title, description, formLink, courseType } = req.body;
+      const { title, description, formLink, courseType, language } = req.body;
       let price = parseFloat(req.body.price);
       const video = req.files.videoFile?.[0]; // { filename, path, mimetype, ... }
       const image = req.files.imageFile?.[0];
@@ -192,6 +202,7 @@ const courseController = {
         description: description,
         form_link: formLink,
         course_type: courseType,
+        language: language,
       };
       const courseId = req.params.courseId;
       if (video) {
@@ -442,7 +453,7 @@ const courseController = {
       const { data: allCourses, error: allCoursesError } = await supabase
         .from('courses')
         .select(
-          'id, title, price, description, upload_date, cover_image_link, form_link, course_type'
+          'id, title, price, description, upload_date, cover_image_link, form_link, course_type, language'
         );
       if (allCoursesError) {
         return res.status(400).json({
