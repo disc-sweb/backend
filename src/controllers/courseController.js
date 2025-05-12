@@ -15,9 +15,9 @@ const {
   cloudinaryVideoUpload,
   cloudinaryImageUpload,
 } = require('./fileUploader');
+
 //Secret to use stripe webhook
-const endpointSecret =
-  'whsec_8ec46d91b5b89b89a97c76c57159951383b93bbd3630dc89326b1a927262be90';
+const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
 async function getUserInfo(userInfo) {
   const { email } = userInfo;
