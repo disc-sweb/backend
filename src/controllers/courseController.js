@@ -84,7 +84,7 @@ const courseController = {
         console.log('Uploading video...');
         video_link = (await cloudinaryVideoUpload(video.path)).url;
         console.log('Uploading restricted video...');
-        restricted_video_link = await cloudinaryVideoUpload(video.path, true)
+        restricted_video_link = (await cloudinaryVideoUpload(video.path, true))
           .url;
       }
       console.log('Uploading image...');
