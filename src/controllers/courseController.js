@@ -15,9 +15,9 @@ const {
   cloudinaryVideoUpload,
   cloudinaryImageUpload,
 } = require('./fileUploader');
+
 //Secret to use stripe webhook
-const endpointSecret =
-  'whsec_8ec46d91b5b89b89a97c76c57159951383b93bbd3630dc89326b1a927262be90';
+const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
 async function getUserInfo(userInfo) {
   const { email } = userInfo;
@@ -59,25 +59,34 @@ const courseController = {
       }
 
       //Get fields
-      const { title, description, formLink, courseType } = req.body;
+      const { title, description, formLink, courseType, language } = req.body;
       let price = parseFloat(req.body.price);
       console.log('Files: ', req.files);
       const video = req.files.videoFile?.[0]; // { filename, path, mimetype, ... }
       const image = req.files.imageFile?.[0];
 
-      if (!video || !image || !title || !price || !description) {
+      if (
+        !courseType ||
+        !image ||
+        !title ||
+        !price ||
+        !description ||
+        !language ||
+        (courseType === 'Online' && !video)
+      ) {
         return res.status(400).json({
-          error:
-            'Error: Title, price, description, form_link, course_type, or file upload fields are empty',
+          error: 'Error: Required field is empty',
         });
       }
-      console.log('Uploading video...');
-      const { url: video_link } = await cloudinaryVideoUpload(video.path);
-      console.log('Uploading restricted video...');
-      const { url: restricted_video_link } = await cloudinaryVideoUpload(
-        video.path,
-        true
-      );
+      let video_link = null;
+      let restricted_video_link = null;
+      if (video) {
+        console.log('Uploading video...');
+        video_link = (await cloudinaryVideoUpload(video.path)).url;
+        console.log('Uploading restricted video...');
+        restricted_video_link = (await cloudinaryVideoUpload(video.path, true))
+          .url;
+      }
       console.log('Uploading image...');
       const { url: image_link } = await cloudinaryImageUpload(image.path);
 
@@ -94,6 +103,7 @@ const courseController = {
             cover_image_link: image_link,
             form_link: formLink,
             course_type: courseType,
+            language: language,
           },
         ])
         .select()
@@ -142,7 +152,7 @@ const courseController = {
         const { data: course_data, error: dataError } = await supabase
           .from('courses')
           .select(
-            'id, title, price, description, restricted_video_link, upload_date, cover_image_link, form_link, course_type'
+            'id, title, price, description, restricted_video_link, upload_date, cover_image_link, form_link, course_type, language'
           )
           .eq('id', courseId)
           .single();
@@ -155,7 +165,7 @@ const courseController = {
         const { data: course_data, error: dataError } = await supabase
           .from('courses')
           .select(
-            'id, title, price, description, video_link, upload_date, cover_image_link, form_link, course_type'
+            'id, title, price, description, video_link, upload_date, cover_image_link, form_link, course_type, language'
           )
           .eq('id', courseId)
           .single();
@@ -182,7 +192,7 @@ const courseController = {
       }
 
       //Get fields
-      const { title, description, formLink, courseType } = req.body;
+      const { title, description, formLink, courseType, language } = req.body;
       let price = parseFloat(req.body.price);
       const video = req.files.videoFile?.[0]; // { filename, path, mimetype, ... }
       const image = req.files.imageFile?.[0];
@@ -192,11 +202,12 @@ const courseController = {
         description: description,
         form_link: formLink,
         course_type: courseType,
+        language: language,
       };
       const courseId = req.params.courseId;
       if (video) {
-        const video_link = await cloudinaryVideoUpload(video.path);
-        const restricted_video_link = await cloudinaryVideoUpload(
+        const { url: video_link } = await cloudinaryVideoUpload(video.path);
+        const { url: restricted_video_link } = await cloudinaryVideoUpload(
           video.path,
           true
         );
@@ -204,7 +215,7 @@ const courseController = {
         updateObj.restricted_video_link = restricted_video_link;
       }
       if (image) {
-        const image_link = await cloudinaryImageUpload(image.path);
+        const { url: image_link } = await cloudinaryImageUpload(image.path);
         updateObj.cover_image_link = image_link;
       }
 
@@ -239,10 +250,23 @@ const courseController = {
       const admin = await checkAdmin(req);
       if (!admin) {
         return res
-          .status(500)
+          .status(403)
           .json({ error: 'User does not have course upload permissions' });
       }
       const courseId = req.params.courseId;
+
+      const { error: user_courses_error } = await supabase
+        .from('user_courses')
+        .delete()
+        .eq('course_id', courseId);
+
+      if (user_courses_error) {
+        return res.status(500).json({
+          message: 'Could not delete enrollments',
+          error: user_courses_error.message,
+        });
+      }
+
       const { error } = await supabase
         .from('courses')
         .delete()
@@ -253,6 +277,7 @@ const courseController = {
           .status(400)
           .json({ message: 'Invalid course id', error: error.message });
       }
+
       res.status(200).json({ message: 'Successfully Deleted Course' });
     } catch (error) {
       console.log('An error occured:', error);
@@ -428,7 +453,7 @@ const courseController = {
       const { data: allCourses, error: allCoursesError } = await supabase
         .from('courses')
         .select(
-          'id, title, price, description, upload_date, cover_image_link, form_link, course_type'
+          'id, title, price, description, upload_date, cover_image_link, form_link, course_type, language'
         );
       if (allCoursesError) {
         return res.status(400).json({
