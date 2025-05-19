@@ -100,6 +100,9 @@ async function deleteFiles(urls) {
 
 const courseController = {
   async courseUpload(req, res) {
+    const startTime = Date.now();
+    const timings = {};
+
     try {
       // Validate access permissions
       const admin = await checkAdmin(req);
@@ -135,10 +138,10 @@ const courseController = {
       let video_link = null;
       let restricted_video_link = null;
       if (video) {
+        const videoStartTime = Date.now();
         const videoFile = fs.readFileSync(video.path);
         console.log('Uploading video...');
-        let videoFileName = `video-${title}-${Date.now()}`;
-        videoFileName = videoFileName.replace(/\s+/g, '-');
+        let videoFileName = `video-${title}-${Date.now()}`.replace(/\s+/g, '-');
         const videoResult = await cloudflareUpload(
           videoFileName,
           video.mimetype,
@@ -146,11 +149,15 @@ const courseController = {
         );
         if (videoResult.error) throw new Error(videoResult.error);
         video_link = videoResult.data.url;
-        console.log('Video uploaded successfully:', video_link);
+        timings.mainVideo = Date.now() - videoStartTime;
+        console.log(`Main video upload took ${timings.mainVideo}ms`);
 
+        const restrictedStartTime = Date.now();
         console.log('Uploading restricted video...');
-        videoFileName = `restricted-${title}-${Date.now()}`;
-        videoFileName = videoFileName.replace(/\s+/g, '-');
+        videoFileName = `restricted-${title}-${Date.now()}`.replace(
+          /\s+/g,
+          '-'
+        );
         const trimmedVideoBuffer = await trimVideo(video);
         const restrictedResult = await cloudflareUpload(
           videoFileName,
@@ -159,12 +166,16 @@ const courseController = {
         );
         if (restrictedResult.error) throw new Error(restrictedResult.error);
         restricted_video_link = restrictedResult.data.url;
+        timings.restrictedVideo = Date.now() - restrictedStartTime;
+        console.log(
+          `Restricted video upload took ${timings.restrictedVideo}ms`
+        );
       }
 
+      const imageStartTime = Date.now();
       console.log('Uploading image...');
       const imageFile = fs.readFileSync(image.path);
-      let imageFileName = `image-${title}-${Date.now()}`;
-      imageFileName = imageFileName.replace(/\s+/g, '-');
+      let imageFileName = `image-${title}-${Date.now()}`.replace(/\s+/g, '-');
       const imageResult = await cloudflareUpload(
         imageFileName,
         image.mimetype,
@@ -172,7 +183,10 @@ const courseController = {
       );
       if (imageResult.error) throw new Error(imageResult.error);
       const image_link = imageResult.data.url;
+      timings.image = Date.now() - imageStartTime;
+      console.log(`Image upload took ${timings.image}ms`);
 
+      const dbStartTime = Date.now();
       // Update course database
       const { data: courseData, error: courseError } = await supabase
         .from('courses')
@@ -198,6 +212,19 @@ const courseController = {
           error: courseError.message,
         });
       }
+      timings.database = Date.now() - dbStartTime;
+      console.log(`Database update took ${timings.database}ms`);
+
+      const totalTime = Date.now() - startTime;
+      console.log('\nUpload Timing Summary:');
+      console.log('------------------------');
+      if (video) {
+        console.log(`Main Video Upload: ${timings.mainVideo}ms`);
+        console.log(`Restricted Video Upload: ${timings.restrictedVideo}ms`);
+      }
+      console.log(`Image Upload: ${timings.image}ms`);
+      console.log(`Database Update: ${timings.database}ms`);
+      console.log(`Total Time: ${totalTime}ms`);
 
       res.status(200).json({
         message: 'Course uploaded successfully',
@@ -440,7 +467,7 @@ const courseController = {
           .status(400)
           .json({ message: 'Invalid course id', error: error.message });
       }
-
+      console.log('Course deleted successfully!');
       res
         .status(200)
         .json({ message: 'Successfully Deleted Course and Associated Files' });
