@@ -1,6 +1,8 @@
 const supabase = require('../config/supabase');
 const tus = require('tus-js-client');
 const cloudinary = require('cloudinary').v2;
+const fetch = require('node-fetch');
+const FormData = require('form-data');
 cloudinary.config({
   secure: true,
 });
@@ -138,10 +140,89 @@ async function cloudinaryImageUpload(filePath) {
   return { url: result.secure_url, publicId: result.public_id };
 }
 
+async function cloudflareUpload(fileName, type, fileBuffer) {
+  try {
+    const formData = new FormData();
+    formData.append('Filename', fileName);
+    formData.append('type', type);
+
+    const blob = Buffer.from(fileBuffer);
+
+    // Add a filename to the file being uploaded
+    formData.append('file', blob, {
+      filename: fileName,
+      contentType: type,
+    });
+
+    const workerUrl =
+      process.env.CLOUDFLARE_WORKERS_URL || 'http://localhost:8787';
+    const requestURL = `${workerUrl}/${fileName}`;
+
+    const response = await fetch(requestURL, {
+      method: 'PUT',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Upload failed: ${await response.text()}`);
+    }
+
+    const result = await response.text();
+    console.log('Upload result:', result);
+
+    return {
+      data: {
+        url: `${workerUrl}/${fileName}`,
+        fileName: fileName,
+      },
+      error: null,
+    };
+  } catch (error) {
+    console.error('Cloudflare upload error:', error);
+    return {
+      data: null,
+      error: error.message,
+    };
+  }
+}
+
+async function cloudflareDelete(fileName) {
+  try {
+    const workerUrl =
+      process.env.CLOUDFLARE_WORKERS_URL || 'http://localhost:8787';
+    const requestURL = `${workerUrl}/${fileName}`;
+
+    const response = await fetch(requestURL, {
+      method: 'DELETE',
+    });
+
+    if (!response.ok) {
+      throw new Error(`Delete failed: ${await response.text()}`);
+    }
+
+    return {
+      data: {
+        message: `File ${fileName} deleted successfully`,
+        fileName: fileName,
+      },
+      error: null,
+    };
+  } catch (error) {
+    console.error('Cloudflare delete error:', error);
+    return {
+      data: null,
+      error: error.message,
+    };
+  }
+}
+
+// Update the module exports
 module.exports = {
   uploadStandard,
   uploadResumable,
   getPublicURL,
   cloudinaryVideoUpload,
   cloudinaryImageUpload,
+  cloudflareUpload,
+  cloudflareDelete,
 };
