@@ -269,6 +269,7 @@ const courseController = {
         if (dataError) {
           return res.status(500).json({ dataError: 'Failed to fetch course' });
         }
+        course_data.owner = false;
         return res.status(200).json(course_data);
       } else {
         const { data: course_data, error: dataError } = await supabase
@@ -282,6 +283,7 @@ const courseController = {
         if (dataError) {
           return res.status(500).json({ error: dataError });
         }
+        course_data.owner = true;
         return res.status(200).json(course_data);
       }
     } catch (error) {
@@ -521,6 +523,10 @@ const courseController = {
               currency: 'usd',
               product_data: {
                 name: courseData.title,
+                metadata: {
+                  course_id: courseId,
+                  course_type: courseData.course_type,
+                },
               },
               unit_amount: courseData.price * 100,
             },
