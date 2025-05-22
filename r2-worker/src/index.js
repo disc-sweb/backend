@@ -22,23 +22,53 @@ export default {
             const formData = await request.formData();
             const Filename = formData.get("Filename");
             const type = formData.get("type");
-            const image = formData.get("file");
+            const file = formData.get("file");
 
-            await env.MY_BUCKET.put(key, image); 
+            await env.MY_BUCKET.put(key, file); 
             console.log(`Uploaded ${Filename} successfully! Type: ${type}`);
             return new Response(`Uploaded ${Filename} successfully! Type: ${type}`);
           case "GET":
             console.log("Handling GET request");
-            const object = await env.MY_BUCKET.get(key);
-            if (object === null) {
-              console.log("Object not found");
-              return new Response("Object Not Found", { status: 404 });
+            const range = request.headers.get('Range');
+
+            //Return the whole object if no range is specified
+            if (!range) {
+              const obj = await env.MY_BUCKET.get(key);
+              if (!obj) return new Response('Not found', { status: 404 });
+              return new Response(obj.body, {
+                status: 200,
+                headers: {
+                  'Content-Type': obj.httpMetadata.contentType || 'application/octet-stream',
+                  'Content-Length': obj.size
+                }
+              });
             }
-            const headers = new Headers();
-            object.writeHttpMetadata(headers);
-            headers.set("etag", object.httpEtag);
-            return new Response(object.body, {
-              headers
+
+            // Parse a single byte-range request: "bytes=start-end"
+            const match = range.match(/bytes=(\d+)-(\d*)/);
+            if (!match) return new Response('Invalid Range', { status: 416 });
+
+            const start = Number(match[1]);
+            const end   = match[2] ? Number(match[2]) : undefined;
+            const length = end !== undefined ? end - start + 1 : undefined;
+
+            // Fetch only that range from R2
+            const obj = await env.MY_BUCKET.get(key, { range: { offset: start, length } });
+            if (!obj) return new Response('Not found', { status: 404 });
+
+            // Compute actual end (in case `length` exceeds object size)
+            const actualEnd = obj.range?.offset !== undefined
+              ? obj.range.offset + obj.range.length - 1
+              : obj.size - 1;
+
+            return new Response(obj.body, {
+              status: 206,
+              headers: {
+                'Content-Type': obj.httpMetadata.contentType || 'application/octet-stream',
+                'Accept-Ranges': 'bytes',
+                'Content-Range': `bytes ${start}-${actualEnd}/${obj.size}`,
+                'Content-Length': obj.range.length
+              }
             });
           case "DELETE":
             console.log("Handling DELETE request");
