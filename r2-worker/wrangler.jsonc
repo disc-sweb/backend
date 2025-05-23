@@ -8,14 +8,14 @@
 	"main": "src/index.js",
 	"compatibility_date": "2025-05-19",
 	"observability": {
-		"enabled": true
+		"enabled": true,
 	},
-  "r2_buckets": [
-    {
-      "binding": "MY_BUCKET",
-	  "bucket_name": "sweb-buck"
-    }
-  ],
+	"r2_buckets": [
+		{
+			"binding": "MY_BUCKET",
+			"bucket_name": "sweb-buck",
+		},
+	],
 
 	/**
 	 * Smart Placement
