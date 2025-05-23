@@ -2,10 +2,15 @@ const express = require('express');
 const courseController = require('../controllers/courseController');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
-
-//Handle multipart form data
 const multer = require('multer');
-const upload = multer({ dest: 'uploads/' });
+
+// Use memory storage instead of disk storage
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 500 * 1024 * 1024, // 100MB limit
+  },
+});
 
 const uploadCourseAssets = upload.fields([
   { name: 'videoFile', maxCount: 1 },

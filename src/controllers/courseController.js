@@ -1,6 +1,7 @@
 const cloudinary = require('cloudinary').v2;
 const supabase = require('../config/supabase');
-require('uuid');
+const ffmpeg = require('fluent-ffmpeg');
+const { Readable } = require('stream');
 
 const STRIPE_API_KEY = process.env.STRIPE_API_KEY;
 const stripe = require('stripe')(STRIPE_API_KEY);
@@ -11,10 +12,7 @@ cloudinary.config({
   secure: true,
 });
 
-const {
-  cloudinaryVideoUpload,
-  cloudinaryImageUpload,
-} = require('./fileUploader');
+const { cloudflareUpload, cloudflareDelete } = require('./fileUploader');
 
 //Secret to use stripe webhook
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -47,10 +45,62 @@ async function checkAdmin(req) {
   return user.admin_access;
 }
 
+async function trimVideo(videoBuffer, mimeType) {
+  const startTime = '00:00:00';
+  const duration = 120; // seconds
+  const inputFormat = mimeType.split('/')[1];
+  const outputFormat = 'mp4';
+
+  return new Promise((resolve, reject) => {
+    // Turn the Buffer into a one-chunk Readable
+    const inputStream = Readable.from([videoBuffer]);
+
+    // collect the output
+    const chunks = [];
+    const command = ffmpeg(inputStream)
+      .inputFormat(inputFormat) // tell ffmpeg the incoming stream format
+      .setStartTime(startTime) // where to start
+      .setDuration(duration) // how long
+      .outputOptions([
+        '-movflags frag_keyframe+empty_moov', // allow streaming mp4
+      ])
+      .format(outputFormat) // output format
+      .on('error', (err) => {
+        console.error('FFmpeg failed:', err);
+        reject(new Error('Video trimming failed.'));
+      });
+
+    // pipe stdout to our collector
+    const ffStream = command.pipe();
+
+    ffStream.on('data', (chunk) => chunks.push(chunk));
+    ffStream.on('end', () => resolve(Buffer.concat(chunks)));
+    ffStream.on('error', (err) => {
+      console.error('Stream error:', err);
+      reject(new Error('Error while streaming trimmed video.'));
+    });
+  });
+}
+
+async function deleteFiles(urls) {
+  for (const url of urls) {
+    if (url) {
+      const fileName = url.split('/').pop();
+      const result = await cloudflareDelete(fileName);
+      if (result.error) {
+        console.error(`Failed to delete file ${fileName}:`, result.error);
+      }
+    }
+  }
+}
+
 const courseController = {
   async courseUpload(req, res) {
+    const startTime = Date.now();
+    const timings = {};
+
     try {
-      //Validate access permissions
+      // Validate access permissions
       const admin = await checkAdmin(req);
       if (!admin) {
         return res
@@ -58,13 +108,14 @@ const courseController = {
           .json({ error: 'User does not have course upload permissions' });
       }
 
-      //Get fields
+      // Get fields
       const { title, description, formLink, courseType, language } = req.body;
       let price = parseFloat(req.body.price);
       console.log('Files: ', req.files);
-      const video = req.files.videoFile?.[0]; // { filename, path, mimetype, ... }
+      const video = req.files.videoFile?.[0];
       const image = req.files.imageFile?.[0];
 
+      // Validate required fields
       if (
         !courseType ||
         !image ||
@@ -78,50 +129,106 @@ const courseController = {
           error: 'Error: Required field is empty',
         });
       }
+
+      // Upload files to R2
       let video_link = null;
       let restricted_video_link = null;
       if (video) {
+        const videoStartTime = Date.now();
+        const videoBuffer = video.buffer;
         console.log('Uploading video...');
-        video_link = (await cloudinaryVideoUpload(video.path)).url;
-        console.log('Uploading restricted video...');
-        restricted_video_link = (await cloudinaryVideoUpload(video.path, true))
-          .url;
-      }
-      console.log('Uploading image...');
-      const { url: image_link } = await cloudinaryImageUpload(image.path);
+        let videoFileName = `video-${title}-${Date.now()}`.replace(/\s+/g, '-');
+        const videoResult = await cloudflareUpload(
+          videoFileName,
+          video.mimetype,
+          videoBuffer
+        );
+        if (videoResult.error) throw new Error(videoResult.error);
+        video_link = videoResult.data.url;
+        timings.mainVideo = Date.now() - videoStartTime;
+        console.log(`Main video upload took ${timings.mainVideo}ms`);
 
-      //Update course database
+        const restrictedStartTime = Date.now();
+        console.log('Uploading restricted video...');
+        videoFileName = `restricted-${title}-${Date.now()}`.replace(
+          /\s+/g,
+          '-'
+        );
+        const trimmedVideoBuffer = await trimVideo(videoBuffer, video.mimetype);
+        const restrictedResult = await cloudflareUpload(
+          videoFileName,
+          video.mimetype,
+          trimmedVideoBuffer
+        );
+        if (restrictedResult.error) throw new Error(restrictedResult.error);
+        restricted_video_link = restrictedResult.data.url;
+        timings.restrictedVideo = Date.now() - restrictedStartTime;
+        console.log(
+          `Restricted video upload took ${timings.restrictedVideo}ms`
+        );
+      }
+
+      const imageStartTime = Date.now();
+      console.log('Uploading image...');
+      const imageBuffer = image.buffer;
+      let imageFileName = `image-${title}-${Date.now()}`.replace(/\s+/g, '-');
+      const imageResult = await cloudflareUpload(
+        imageFileName,
+        image.mimetype,
+        imageBuffer
+      );
+      if (imageResult.error) throw new Error(imageResult.error);
+      const image_link = imageResult.data.url;
+      timings.image = Date.now() - imageStartTime;
+      console.log(`Image upload took ${timings.image}ms`);
+
+      const dbStartTime = Date.now();
+      // Update course database
       const { data: courseData, error: courseError } = await supabase
         .from('courses')
         .insert([
           {
-            title: title,
-            price: price,
-            description: description,
-            video_link: video_link,
-            restricted_video_link: restricted_video_link,
+            title,
+            price,
+            description,
+            video_link,
+            restricted_video_link,
             cover_image_link: image_link,
             form_link: formLink,
             course_type: courseType,
-            language: language,
+            language,
           },
         ])
         .select()
         .single();
 
-      console.log(courseData);
+      console.log('Course data: ', courseData);
+
       if (courseError) {
         return res.status(500).json({
           message: 'Error inserting data',
           error: courseError.message,
         });
       }
+      timings.database = Date.now() - dbStartTime;
+      console.log(`Database update took ${timings.database}ms`);
+
+      const totalTime = Date.now() - startTime;
+      console.log('\nUpload Timing Summary:');
+      console.log('------------------------');
+      if (video) {
+        console.log(`Main Video Upload: ${timings.mainVideo}ms`);
+        console.log(`Restricted Video Upload: ${timings.restrictedVideo}ms`);
+      }
+      console.log(`Image Upload: ${timings.image}ms`);
+      console.log(`Database Update: ${timings.database}ms`);
+      console.log(`Total Time: ${totalTime}ms`);
 
       res.status(200).json({
         message: 'Course uploaded successfully',
       });
     } catch (error) {
-      console.log('An error occured:', error);
+      console.log('An error occurred:', error);
       res.status(500).json({ error: 'Failed to upload course to server' });
     }
   },
@@ -160,6 +267,7 @@ const courseController = {
         if (dataError) {
           return res.status(500).json({ dataError: 'Failed to fetch course' });
         }
+        course_data.owner = false;
         return res.status(200).json(course_data);
       } else {
         const { data: course_data, error: dataError } = await supabase
@@ -173,6 +281,7 @@ const courseController = {
         if (dataError) {
           return res.status(500).json({ error: dataError });
         }
+        course_data.owner = true;
         return res.status(200).json(course_data);
       }
     } catch (error) {
@@ -183,7 +292,7 @@ const courseController = {
 
   async editCourse(req, res) {
     try {
-      //Validate access permissions
+      // Validate access permissions
       const admin = await checkAdmin(req);
       if (!admin) {
         return res
@@ -191,40 +300,96 @@ const courseController = {
           .json({ error: 'User does not have course upload permissions' });
       }
 
-      //Get fields
-      const { title, description, formLink, courseType, language } = req.body;
-      let price = parseFloat(req.body.price);
-      const video = req.files.videoFile?.[0]; // { filename, path, mimetype, ... }
-      const image = req.files.imageFile?.[0];
-      const updateObj = {
-        title: title,
-        price: price,
-        description: description,
-        form_link: formLink,
-        course_type: courseType,
-        language: language,
-      };
       const courseId = req.params.courseId;
-      if (video) {
-        const { url: video_link } = await cloudinaryVideoUpload(video.path);
-        const { url: restricted_video_link } = await cloudinaryVideoUpload(
-          video.path,
-          true
-        );
-        updateObj.video_link = video_link;
-        updateObj.restricted_video_link = restricted_video_link;
-      }
-      if (image) {
-        const { url: image_link } = await cloudinaryImageUpload(image.path);
-        updateObj.cover_image_link = image_link;
+
+      // Get current course data
+      const { data: currentCourse, error: fetchError } = await supabase
+        .from('courses')
+        .select('*')
+        .eq('id', courseId)
+        .single();
+
+      if (fetchError) {
+        throw new Error('Failed to fetch current course data');
       }
 
-      //Update database
+      // Get fields
+      const { title, description, formLink, courseType, language } = req.body;
+      let price = parseFloat(req.body.price);
+      const video = req.files.videoFile?.[0];
+      const image = req.files.imageFile?.[0];
+
+      // Initialize update object
+      const updateObj = {
+        title,
+        price,
+        description,
+        form_link: formLink,
+        course_type: courseType,
+        language,
+      };
+
+      // Handle video upload if provided
+      if (video) {
+        const videoBuffer = video.buffer;
+        console.log('Updating video...');
+        let videoFileName = null;
+        let restrictedFileName = null;
+
+        if (!currentCourse.video_link) {
+          // New Online course conversion
+          videoFileName = `video-${title}-${Date.now()}`.replace(/\s+/g, '-');
+          restrictedFileName = `restricted-${title}-${Date.now()}`.replace(
+            /\s+/g,
+            '-'
+          );
+        } else {
+          // Existing Online course update
+          videoFileName = currentCourse.video_link.split('/').pop();
+          restrictedFileName = currentCourse.restricted_video_link
+            .split('/')
+            .pop();
+        }
+
+        // Update existing files
+        const videoResult = await cloudflareUpload(
+          videoFileName,
+          video.mimetype,
+          videoBuffer
+        );
+        if (videoResult.error) throw new Error(videoResult.error);
+        updateObj.video_link = videoResult.data.url;
+
+        console.log('Updating restricted video...');
+        const trimmedVideoBuffer = await trimVideo(videoBuffer, video.mimetype);
+        const restrictedResult = await cloudflareUpload(
+          restrictedFileName,
+          video.mimetype,
+          trimmedVideoBuffer
+        );
+        if (restrictedResult.error) throw new Error(restrictedResult.error);
+        updateObj.restricted_video_link = restrictedResult.data.url;
+      }
+
+      // Handle image upload if provided
+      if (image) {
+        console.log('Updating image...');
+        const imageBuffer = image.buffer;
+        const imageFileName = currentCourse.cover_image_link.split('/').pop();
+
+        const imageResult = await cloudflareUpload(
+          imageFileName,
+          image.mimetype,
+          imageBuffer
+        );
+        if (imageResult.error) throw new Error(imageResult.error);
+        updateObj.cover_image_link = imageResult.data.url;
+      }
+
+      // Update database
       const { data: courseData, error: courseError } = await supabase
         .from('courses')
-        .update({
-          ...updateObj,
-        })
+        .update(updateObj)
         .eq('id', courseId)
         .select()
         .single();
@@ -240,21 +405,46 @@ const courseController = {
         course: courseData,
       });
     } catch (error) {
-      console.log('An error occured:', error);
+      console.log('An error occurred:', error);
       res.status(500).json({ error: 'Failed to edit course' });
     }
   },
   async deleteCourse(req, res) {
     try {
-      //Validate access permissions
+      // Validate access permissions
       const admin = await checkAdmin(req);
       if (!admin) {
         return res
           .status(403)
           .json({ error: 'User does not have course upload permissions' });
       }
+
+      console.log('Deleting course...');
+
       const courseId = req.params.courseId;
 
+      // Get course data to find file URLs
+      const { data: course, error: fetchError } = await supabase
+        .from('courses')
+        .select('*')
+        .eq('id', courseId)
+        .single();
+
+      if (fetchError) {
+        return res.status(404).json({
+          message: 'Course not found',
+          error: fetchError.message,
+        });
+      }
+
+      // Delete files from R2
+      await deleteFiles([
+        course.video_link,
+        course.restricted_video_link,
+        course.cover_image_link,
+      ]);
+
+      // Delete course enrollments
       const { error: user_courses_error } = await supabase
         .from('user_courses')
         .delete()
@@ -267,6 +457,7 @@ const courseController = {
         });
       }
 
+      // Delete course record
       const { error } = await supabase
         .from('courses')
         .delete()
@@ -277,10 +468,12 @@ const courseController = {
           .status(400)
           .json({ message: 'Invalid course id', error: error.message });
       }
-
-      res.status(200).json({ message: 'Successfully Deleted Course' });
+      console.log('Course deleted successfully!');
+      res
+        .status(200)
+        .json({ message: 'Successfully Deleted Course and Associated Files' });
     } catch (error) {
-      console.log('An error occured:', error);
+      console.log('An error occurred:', error);
       res.status(500).json({ error: 'Failed to delete course' });
     }
   },
@@ -329,6 +522,10 @@ const courseController = {
               currency: 'usd',
               product_data: {
                 name: courseData.title,
+                metadata: {
+                  course_id: courseId,
+                  course_type: courseData.course_type,
+                },
               },
               unit_amount: courseData.price * 100,
             },
