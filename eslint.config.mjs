@@ -15,6 +15,8 @@ export default [
     languageOptions: {
       globals: {
         ...globals.node,
+        Response: 'readonly',
+        Headers: 'readonly',
       },
     },
   },
