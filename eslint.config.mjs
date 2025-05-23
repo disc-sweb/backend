@@ -17,6 +17,7 @@ export default [
         ...globals.node,
         Response: 'readonly',
         Headers: 'readonly',
+        Request: 'readonly',
       },
     },
   },
@@ -43,6 +44,12 @@ export default [
         {
           allowSameFolder: true,
           rootDir: 'src',
+        },
+      ],
+      'import/no-unresolved': [
+        'error',
+        {
+          ignore: ['cloudflare:test', 'vitest'],
         },
       ],
       'prettier/prettier': [
