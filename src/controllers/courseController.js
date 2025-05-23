@@ -3,6 +3,7 @@ const supabase = require('../config/supabase');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const ffmpeg = require('fluent-ffmpeg');
+const { Readable } = require('stream');
 
 const STRIPE_API_KEY = process.env.STRIPE_API_KEY;
 const stripe = require('stripe')(STRIPE_API_KEY);
@@ -46,43 +47,40 @@ async function checkAdmin(req) {
   return user.admin_access;
 }
 
-async function trimVideo(video) {
-  const inputPath = video.path;
+async function trimVideo(videoBuffer, mimeType) {
   const startTime = '00:00:00';
-  const duration = 120;
-  const trimmedFilename = `trimmed-${uuidv4()}.mp4`;
-  const trimmedPath = `uploads/${trimmedFilename}`;
+  const duration = 120; // seconds
+  const inputFormat = mimeType.split('/')[1];
+  const outputFormat = 'mp4';
 
   return new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
-      .setStartTime(startTime)
-      .setDuration(duration)
-      .output(trimmedPath)
-      .on('end', async () => {
-        try {
-          // Read the trimmed video file
-          const trimmedBuffer = fs.readFileSync(trimmedPath);
+    // Turn the Buffer into a one-chunk Readable
+    const inputStream = Readable.from([videoBuffer]);
 
-          // Clean up temporary files
-          fs.unlinkSync(inputPath);
-          fs.unlinkSync(trimmedPath);
-
-          console.log('Video trimming succeeded');
-          resolve(trimmedBuffer);
-        } catch (err) {
-          console.error('Error:', err);
-          // Clean up on error
-          if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
-          if (fs.existsSync(trimmedPath)) fs.unlinkSync(trimmedPath);
-          reject(new Error('Failed to process trimmed video.'));
-        }
-      })
+    // collect the output
+    const chunks = [];
+    const command = ffmpeg(inputStream)
+      .inputFormat(inputFormat) // tell ffmpeg the incoming stream format
+      .setStartTime(startTime) // where to start
+      .setDuration(duration) // how long
+      .outputOptions([
+        '-movflags frag_keyframe+empty_moov', // allow streaming mp4
+      ])
+      .format(outputFormat) // output format
       .on('error', (err) => {
-        console.error('FFmpeg error:', err);
-        if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
-        reject(new Error('Failed to trim video.'));
-      })
-      .run();
+        console.error('FFmpeg failed:', err);
+        reject(new Error('Video trimming failed.'));
+      });
+
+    // pipe stdout to our collector
+    const ffStream = command.pipe();
+
+    ffStream.on('data', (chunk) => chunks.push(chunk));
+    ffStream.on('end', () => resolve(Buffer.concat(chunks)));
+    ffStream.on('error', (err) => {
+      console.error('Stream error:', err);
+      reject(new Error('Error while streaming trimmed video.'));
+    });
   });
 }
 
@@ -139,13 +137,13 @@ const courseController = {
       let restricted_video_link = null;
       if (video) {
         const videoStartTime = Date.now();
-        const videoFile = fs.readFileSync(video.path);
+        const videoBuffer = video.buffer;
         console.log('Uploading video...');
         let videoFileName = `video-${title}-${Date.now()}`.replace(/\s+/g, '-');
         const videoResult = await cloudflareUpload(
           videoFileName,
           video.mimetype,
-          videoFile
+          videoBuffer
         );
         if (videoResult.error) throw new Error(videoResult.error);
         video_link = videoResult.data.url;
@@ -158,7 +156,7 @@ const courseController = {
           /\s+/g,
           '-'
         );
-        const trimmedVideoBuffer = await trimVideo(video);
+        const trimmedVideoBuffer = await trimVideo(videoBuffer, video.mimetype);
         const restrictedResult = await cloudflareUpload(
           videoFileName,
           video.mimetype,
@@ -174,12 +172,12 @@ const courseController = {
 
       const imageStartTime = Date.now();
       console.log('Uploading image...');
-      const imageFile = fs.readFileSync(image.path);
+      const imageBuffer = image.buffer;
       let imageFileName = `image-${title}-${Date.now()}`.replace(/\s+/g, '-');
       const imageResult = await cloudflareUpload(
         imageFileName,
         image.mimetype,
-        imageFile
+        imageBuffer
       );
       if (imageResult.error) throw new Error(imageResult.error);
       const image_link = imageResult.data.url;
@@ -333,10 +331,11 @@ const courseController = {
 
       // Handle video upload if provided
       if (video) {
-        const videoFile = fs.readFileSync(video.path);
+        const videoBuffer = video.buffer;
         console.log('Updating video...');
         let videoFileName = null;
         let restrictedFileName = null;
+
         if (!currentCourse.video_link) {
           // New Online course conversion
           videoFileName = `video-${title}-${Date.now()}`.replace(/\s+/g, '-');
@@ -356,13 +355,13 @@ const courseController = {
         const videoResult = await cloudflareUpload(
           videoFileName,
           video.mimetype,
-          videoFile
+          videoBuffer
         );
         if (videoResult.error) throw new Error(videoResult.error);
         updateObj.video_link = videoResult.data.url;
 
         console.log('Updating restricted video...');
-        const trimmedVideoBuffer = await trimVideo(video);
+        const trimmedVideoBuffer = await trimVideo(videoBuffer, video.mimetype);
         const restrictedResult = await cloudflareUpload(
           restrictedFileName,
           video.mimetype,
@@ -375,13 +374,13 @@ const courseController = {
       // Handle image upload if provided
       if (image) {
         console.log('Updating image...');
-        const imageFile = fs.readFileSync(image.path);
+        const imageBuffer = image.buffer;
         const imageFileName = currentCourse.cover_image_link.split('/').pop();
 
         const imageResult = await cloudflareUpload(
           imageFileName,
           image.mimetype,
-          imageFile
+          imageBuffer
         );
         if (imageResult.error) throw new Error(imageResult.error);
         updateObj.cover_image_link = imageResult.data.url;
