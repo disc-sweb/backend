@@ -15,69 +15,83 @@ export default {
 			console.log('Request URL:', url);
 			const key = url.pathname.slice(1);
 
+			// Declare variables outside switch
+			let formData, Filename, type, file, obj, range, bytes, start, end;
+			let contentLength, headers, object;
+
 			switch (request.method) {
-				case 'PUT':
+				case 'PUT': {
 					console.log('Handling PUT request');
-					// Parse the request body to extract fields
-					const formData = await request.formData();
-					const Filename = formData.get('Filename');
-					const type = formData.get('type');
-					const file = formData.get('file');
+					formData = await request.formData();
+					Filename = formData.get('Filename');
+					type = formData.get('type');
+					file = formData.get('file');
 
 					await env.MY_BUCKET.put(key, file);
 					console.log(`Uploaded ${Filename} successfully! Type: ${type}`);
-					return new Response(`Uploaded ${Filename} successfully! Type: ${type}`);
-				case 'GET':
-					console.log('Handling GET request');
-					const range = request.headers.get('Range');
+					return new Response(`Uploaded ${Filename} successfully! Type: ${type}`, {
+						headers: {
+							'Access-Control-Allow-Origin': '*',
+						},
+					});
+				}
 
-					//Return the whole object if no range is specified
+				case 'GET': {
+					console.log('Handling GET request');
+					range = request.headers.get('Range');
+
 					if (!range) {
-						const obj = await env.MY_BUCKET.get(key);
+						obj = await env.MY_BUCKET.get(key);
 						if (!obj) return new Response('Not found', { status: 404 });
 						return new Response(obj.body, {
 							status: 200,
 							headers: {
 								'Content-Type': obj.httpMetadata.contentType || 'application/octet-stream',
 								'Content-Length': obj.size,
+								'Access-Control-Allow-Origin': '*',
 							},
 						});
 					}
 
-					// Parse a single byte-range request: "bytes=start-end"
-					const match = range.match(/bytes=(\d+)-(\d*)/);
-					if (!match) return new Response('Invalid Range', { status: 416 });
+					object = await env.MY_BUCKET.get(key);
+					if (!object) return new Response('Not found', { status: 404 });
 
-					const start = Number(match[1]);
-					const end = match[2] ? Number(match[2]) : undefined;
-					const length = end !== undefined ? end - start + 1 : undefined;
+					bytes = range.replace('bytes=', '').split('-');
+					start = parseInt(bytes[0], 10);
+					end = bytes[1] ? parseInt(bytes[1], 10) : object.size - 1;
 
-					// Fetch only that range from R2
-					const obj = await env.MY_BUCKET.get(key, { range: { offset: start, length } });
-					if (!obj) return new Response('Not found', { status: 404 });
-
-					// Compute actual end (in case `length` exceeds object size)
-					const actualEnd = obj.range?.offset !== undefined ? obj.range.offset + obj.range.length - 1 : obj.size - 1;
-
-					return new Response(obj.body, {
-						status: 206,
-						headers: {
-							'Content-Type': obj.httpMetadata.contentType || 'application/octet-stream',
-							'Accept-Ranges': 'bytes',
-							'Content-Range': `bytes ${start}-${actualEnd}/${obj.size}`,
-							'Content-Length': obj.range.length,
-						},
+					contentLength = end - start + 1;
+					headers = new Headers({
+						'Content-Range': `bytes ${start}-${end}/${object.size}`,
+						'Accept-Ranges': 'bytes',
+						'Content-Length': contentLength,
+						'Content-Type': object.httpMetadata.contentType || 'application/octet-stream',
+						'Access-Control-Allow-Origin': '*',
+						'Cache-Control': 'public, max-age=31536000',
 					});
-				case 'DELETE':
+
+					return new Response(object.body.slice(start, end + 1), {
+						status: 206,
+						headers,
+					});
+				}
+
+				case 'DELETE': {
 					console.log('Handling DELETE request');
 					await env.MY_BUCKET.delete(key);
-					return new Response('Deleted!');
+					return new Response('Deleted!', {
+						headers: {
+							'Access-Control-Allow-Origin': '*',
+						},
+					});
+				}
+
 				default:
-					console.log('Invalid request method');
 					return new Response('Method Not Allowed', {
 						status: 405,
 						headers: {
 							Allow: 'PUT, GET, DELETE',
+							'Access-Control-Allow-Origin': '*',
 						},
 					});
 			}
