@@ -1,7 +1,5 @@
 const cloudinary = require('cloudinary').v2;
 const supabase = require('../config/supabase');
-const fs = require('fs');
-const { v4: uuidv4 } = require('uuid');
 const ffmpeg = require('fluent-ffmpeg');
 const { Readable } = require('stream');
 
@@ -203,6 +201,8 @@ const courseController = {
         ])
         .select()
         .single();
+
+      console.log('Course data: ', courseData);
 
       if (courseError) {
         return res.status(500).json({
