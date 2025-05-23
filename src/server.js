@@ -34,11 +34,6 @@ if (process.env.NODE_ENV !== 'production') {
     origin: process.env.FRONTEND_URL_DEV,
     credentials: true,
   });
-} else {
-  console.log('CORS Configuration:', {
-    origin: process.env.FRONTEND_URL,
-    credentials: true,
-  });
 }
 //Insert before express.json to deal with express.raw conflict
 const courseController = require('./controllers/courseController');
