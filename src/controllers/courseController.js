@@ -1,7 +1,7 @@
+import { createFFmpeg, fetchFile } from '@ffmpeg/ffmpeg';
+
 const cloudinary = require('cloudinary').v2;
 const supabase = require('../config/supabase');
-
-const { createFFmpeg, fetchFile } = await import('@ffmpeg/ffmpeg');
 
 // one WASM instance, cached across invocations
 const ffmpeg = createFFmpeg({ log: true });
