@@ -4,6 +4,7 @@ const cookieParser = require('cookie-parser');
 require('dotenv').config();
 
 const authRoutes = require('./routes/authRoutes');
+const courseRoutes = require('./routes/courseRoutes');
 
 const app = express();
 
@@ -30,10 +31,17 @@ app.use(cors(corsOptions));
 
 if (process.env.NODE_ENV !== 'production') {
   console.log('CORS Configuration:', {
-    origin: process.env.FRONTEND_URL,
+    origin: process.env.FRONTEND_URL_DEV,
     credentials: true,
   });
 }
+//Insert before express.json to deal with express.raw conflict
+const courseController = require('./controllers/courseController');
+app.use(
+  '/courses/stripeWebhook',
+  express.raw({ type: 'application/json' }),
+  courseController.stripeWebhook
+);
 
 app.use(cookieParser());
 app.use(express.json());
@@ -44,6 +52,7 @@ app.use((req, res, next) => {
 });
 
 app.use('/auth', authRoutes);
+app.use('/courses', courseRoutes);
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
@@ -72,9 +81,15 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`Frontend URL: ${process.env.FRONTEND_URL}`);
-});
+// Only start the server if we're not being imported by Vercel
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`Frontend URL: ${process.env.FRONTEND_URL}`);
+  });
+}
+
+// Export the Express app for Vercel
+module.exports = app;
