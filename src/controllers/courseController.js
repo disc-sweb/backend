@@ -1,6 +1,7 @@
 const cloudinary = require('cloudinary').v2;
 const supabase = require('../config/supabase');
 
+const ffmpeg = require('fluent-ffmpeg');
 const { Readable } = require('stream');
 
 const STRIPE_API_KEY = process.env.STRIPE_API_KEY;
