@@ -8,7 +8,7 @@ const multer = require('multer');
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 500 * 1024 * 1024, // 100MB limit
+    fileSize: 500 * 1024 * 1024, // 500MB limit
   },
 });
 
