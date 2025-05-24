@@ -47,7 +47,7 @@ async function checkAdmin(req) {
 
 async function trimVideo(videoBuffer, mimeType) {
   const startTime = '00:00:00';
-  const duration = 120; // seconds
+  const duration = 15; // seconds
   const inputFormat = mimeType.split('/')[1];
   const outputFormat = 'mp4';
 
