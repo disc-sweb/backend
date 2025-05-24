@@ -18,6 +18,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
     "@supabase/supabase-js": "^2.47.8",
     "cloudinary": "^2.6.0",
     "cookie-parser": "^1.4.7",
