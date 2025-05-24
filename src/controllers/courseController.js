@@ -1,10 +1,7 @@
-import { createFFmpeg, fetchFile } from '@ffmpeg/ffmpeg';
-
 const cloudinary = require('cloudinary').v2;
 const supabase = require('../config/supabase');
 
-// one WASM instance, cached across invocations
-const ffmpeg = createFFmpeg({ log: true });
+const { Readable } = require('stream');
 
 const STRIPE_API_KEY = process.env.STRIPE_API_KEY;
 const stripe = require('stripe')(STRIPE_API_KEY);
@@ -48,35 +45,41 @@ async function checkAdmin(req) {
   return user.admin_access;
 }
 
-async function trimVideo(videoBuffer, videoType) {
-  const start = 0;
-  const duration = 15;
-  console.log('Video type', videoType);
-  // 1) Load the WASM on first use
-  if (!ffmpeg.isLoaded()) {
-    await ffmpeg.load();
-  }
+async function trimVideo(videoBuffer, mimeType) {
+  const startTime = '00:00:00';
+  const duration = 15; // seconds
+  const inputFormat = mimeType.split('/')[1];
+  const outputFormat = 'mp4';
 
-  // 2) Write your input to the in-WASM filesystem
-  //    name it “in.mp4” (change extension if needed)
-  ffmpeg.FS('writeFile', 'in.mp4', await fetchFile(videoBuffer));
+  return new Promise((resolve, reject) => {
+    // Turn the Buffer into a one-chunk Readable
+    const inputStream = Readable.from([videoBuffer]);
 
-  // 3) Run the FFmpeg command: seek, then copy out a 15s clip
-  await ffmpeg.run(
-    '-ss',
-    start.toString(), // start offset
-    '-t',
-    duration.toString(), // duration
-    '-i',
-    'in.mp4', // input
-    '-c',
-    'copy', // avoid re‐encode
-    'out.mp4' // output path
-  );
+    // collect the output
+    const chunks = [];
+    const command = ffmpeg(inputStream)
+      .inputFormat(inputFormat) // tell ffmpeg the incoming stream format
+      .setStartTime(startTime) // where to start
+      .setDuration(duration) // how long
+      .outputOptions([
+        '-movflags frag_keyframe+empty_moov', // allow streaming mp4
+      ])
+      .format(outputFormat) // output format
+      .on('error', (err) => {
+        console.error('FFmpeg failed:', err);
+        reject(new Error('Video trimming failed.'));
+      });
 
-  // 4) Read the result back into Node
-  const data = ffmpeg.FS('readFile', 'out.mp4');
-  return Buffer.from(data.buffer);
+    // pipe stdout to our collector
+    const ffStream = command.pipe();
+
+    ffStream.on('data', (chunk) => chunks.push(chunk));
+    ffStream.on('end', () => resolve(Buffer.concat(chunks)));
+    ffStream.on('error', (err) => {
+      console.error('Stream error:', err);
+      reject(new Error('Error while streaming trimmed video.'));
+    });
+  });
 }
 
 async function deleteFiles(urls) {
