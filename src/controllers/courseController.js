@@ -6,8 +6,6 @@ const { createFFmpeg, fetchFile } = require('@ffmpeg/ffmpeg');
 // one WASM instance, cached across invocations
 const ffmpeg = createFFmpeg({ log: true });
 
-const { Readable } = require('stream');
-
 const STRIPE_API_KEY = process.env.STRIPE_API_KEY;
 const stripe = require('stripe')(STRIPE_API_KEY);
 
