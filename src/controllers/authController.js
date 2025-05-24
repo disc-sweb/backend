@@ -110,7 +110,7 @@ const authController = {
 
       const { data: userData, error: dbError } = await supabase
         .from('users')
-        .select('id, username, email, firstname, lastname')
+        .select('id, username, email, firstname, lastname, admin_access')
         .eq('email', user.email)
         .single();
 
@@ -334,6 +334,7 @@ const authController = {
             user.user_metadata?.name?.split(' ')[1] ||
             null,
         };
+        console.log(newUser);
 
         const { data: insertedUser, error: insertError } = await supabase
           .from('users')
