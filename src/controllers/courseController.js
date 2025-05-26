@@ -47,9 +47,10 @@ async function checkAdmin(req) {
 }
 
 async function trimVideo(videoBuffer, mimeType) {
+  console.log(mimeType);
   const startTime = '00:00:00';
   const duration = 120;
-  const inputFormat = mimeType.split('/')[1];
+  //const inputFormat = mimeType.split('/')[1];
   const outputFormat = 'mp4';
 
   return new Promise((resolve, reject) => {
@@ -58,14 +59,17 @@ async function trimVideo(videoBuffer, mimeType) {
 
     // collect the output
     const chunks = [];
-    const command = ffmpeg(inputStream)
-      .inputFormat(inputFormat) // tell ffmpeg the incoming stream format
-      .setStartTime(startTime) // where to start
-      .setDuration(duration) // how long
+    const command = ffmpeg()
+      .input(inputStream)
+      .inputOptions([`-ss ${startTime}`]) // seek _before_ decoding
       .outputOptions([
-        '-movflags frag_keyframe+empty_moov', // allow streaming mp4
+        `-t ${duration}`, // trim length
+        '-c:v copy', // copy video packets
+        '-c:a copy', // copy audio packets
+        '-movflags frag_keyframe+empty_moov', // for streaming-friendly MP4
       ])
-      .format(outputFormat) // output format
+      .format(outputFormat)
+      .pipe()
       .on('error', (err) => {
         console.error('FFmpeg failed:', err);
         reject(new Error('Video trimming failed.'));
