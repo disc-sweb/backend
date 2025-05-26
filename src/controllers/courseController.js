@@ -4,12 +4,10 @@ const supabase = require('../config/supabase');
 const ffmpeg = require('fluent-ffmpeg');
 const { Readable } = require('stream');
 
-
 const STRIPE_API_KEY = process.env.STRIPE_API_KEY;
 const stripe = require('stripe')(STRIPE_API_KEY);
 
 const FRONTEND_URL = process.env.FRONTEND_URL;
-
 
 cloudinary.config({
   secure: true,
@@ -48,7 +46,6 @@ async function checkAdmin(req) {
   return user.admin_access;
 }
 
-
 async function trimVideo(videoBuffer, mimeType) {
   const startTime = '00:00:00';
   const duration = 15; // seconds
@@ -85,7 +82,6 @@ async function trimVideo(videoBuffer, mimeType) {
     });
   });
 }
-
 
 async function deleteFiles(urls) {
   for (const url of urls) {
@@ -159,7 +155,6 @@ const courseController = {
           /\s+/g,
           '-'
         );
-
         const trimmedVideoBuffer = await trimVideo(videoBuffer, video.mimetype);
         const restrictedResult = await cloudflareUpload(
           videoFileName,
@@ -168,7 +163,6 @@ const courseController = {
         );
         if (restrictedResult.error) throw new Error(restrictedResult.error);
         restricted_video_link = restrictedResult.data.url;
-
         timings.restrictedVideo = Date.now() - restrictedStartTime;
         console.log(
           `Restricted video upload took ${timings.restrictedVideo}ms`
@@ -341,17 +335,21 @@ const courseController = {
         const videoBuffer = video.buffer;
         console.log('Updating video...');
         let videoFileName = null;
-
         let restrictedFileName = null;
-
 
         if (!currentCourse.video_link) {
           // New Online course conversion
           videoFileName = `video-${title}-${Date.now()}`.replace(/\s+/g, '-');
-
+          restrictedFileName = `restricted-${title}-${Date.now()}`.replace(
+            /\s+/g,
+            '-'
+          );
         } else {
           // Existing Online course update
           videoFileName = currentCourse.video_link.split('/').pop();
+          restrictedFileName = currentCourse.restricted_video_link
+            .split('/')
+            .pop();
         }
 
         // Update existing files
@@ -363,11 +361,15 @@ const courseController = {
         if (videoResult.error) throw new Error(videoResult.error);
         updateObj.video_link = videoResult.data.url;
 
-
-        updateObj.restricted_video_link = await cloudinaryVideoUpload(
-          updateObj.video_link,
-          true
+        console.log('Updating restricted video...');
+        const trimmedVideoBuffer = await trimVideo(videoBuffer, video.mimetype);
+        const restrictedResult = await cloudflareUpload(
+          restrictedFileName,
+          video.mimetype,
+          trimmedVideoBuffer
         );
+        if (restrictedResult.error) throw new Error(restrictedResult.error);
+        updateObj.restricted_video_link = restrictedResult.data.url;
       }
 
       // Handle image upload if provided
