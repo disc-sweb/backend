@@ -287,21 +287,13 @@ const courseController = {
         const videoBuffer = video.buffer;
         console.log('Updating video...');
         let videoFileName = null;
-        let restrictedFileName = null;
 
         if (!currentCourse.video_link) {
           // New Online course conversion
           videoFileName = `video-${title}-${Date.now()}`.replace(/\s+/g, '-');
-          restrictedFileName = `restricted-${title}-${Date.now()}`.replace(
-            /\s+/g,
-            '-'
-          );
         } else {
           // Existing Online course update
           videoFileName = currentCourse.video_link.split('/').pop();
-          restrictedFileName = currentCourse.restricted_video_link
-            .split('/')
-            .pop();
         }
 
         // Update existing files
@@ -313,15 +305,10 @@ const courseController = {
         if (videoResult.error) throw new Error(videoResult.error);
         updateObj.video_link = videoResult.data.url;
 
-        console.log('Updating restricted video...');
-        const trimmedVideoBuffer = await trimVideo(videoBuffer, video.mimetype);
-        const restrictedResult = await cloudflareUpload(
-          restrictedFileName,
-          video.mimetype,
-          trimmedVideoBuffer
+        updateObj.restricted_video_link = await cloudinaryVideoUpload(
+          updateObj.video_link,
+          true
         );
-        if (restrictedResult.error) throw new Error(restrictedResult.error);
-        updateObj.restricted_video_link = restrictedResult.data.url;
       }
 
       // Handle image upload if provided
