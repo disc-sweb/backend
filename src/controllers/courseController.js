@@ -47,43 +47,30 @@ async function checkAdmin(req) {
 }
 
 async function trimVideo(videoBuffer, mimeType) {
-  console.log(mimeType);
   const startTime = '00:00:00';
-  const duration = 120;
-  //const inputFormat = mimeType.split('/')[1];
-  const outputFormat = 'mp4';
+  const duration = 120; // seconds
+  const inputFmt = mimeType.split('/')[1];
+  const outputFmt = 'mp4';
 
   return new Promise((resolve, reject) => {
-    // Turn the Buffer into a one-chunk Readable
     const inputStream = Readable.from([videoBuffer]);
-
-    // collect the output
     const chunks = [];
-    const command = ffmpeg()
+
+    ffmpeg()
       .input(inputStream)
-      .inputOptions([`-ss ${startTime}`]) // seek _before_ decoding
+      .inputFormat(inputFmt)
+      .inputOptions([`-ss ${startTime}`]) // seek *before* decoding
       .outputOptions([
-        `-t ${duration}`, // trim length
-        '-c:v copy', // copy video packets
-        '-c:a copy', // copy audio packets
-        '-movflags frag_keyframe+empty_moov', // for streaming-friendly MP4
+        `-t ${duration}`, // trim duration
+        '-c:v copy', // video: copy packets
+        '-c:a copy', // audio: copy packets
+        '-movflags frag_keyframe+empty_moov', // for streaming MP4
       ])
-      .format(outputFormat)
+      .format(outputFmt)
+      .on('error', reject)
       .pipe()
-      .on('error', (err) => {
-        console.error('FFmpeg failed:', err);
-        reject(new Error('Video trimming failed.'));
-      });
-
-    // pipe stdout to our collector
-    const ffStream = command.pipe();
-
-    ffStream.on('data', (chunk) => chunks.push(chunk));
-    ffStream.on('end', () => resolve(Buffer.concat(chunks)));
-    ffStream.on('error', (err) => {
-      console.error('Stream error:', err);
-      reject(new Error('Error while streaming trimmed video.'));
-    });
+      .on('data', (chunk) => chunks.push(chunk))
+      .on('end', () => resolve(Buffer.concat(chunks)));
   });
 }
 
