@@ -1,22 +1,15 @@
-const cloudinary = require('cloudinary').v2;
 const supabase = require('../config/supabase');
-const ffmpeg = require('fluent-ffmpeg');
-const ffmpegPath = require('ffmpeg-static');
-
-ffmpeg.setFfmpegPath(ffmpegPath);
-
-const { Readable } = require('stream');
 
 const STRIPE_API_KEY = process.env.STRIPE_API_KEY;
 const stripe = require('stripe')(STRIPE_API_KEY);
 
 const FRONTEND_URL = process.env.FRONTEND_URL;
 
-cloudinary.config({
-  secure: true,
-});
-
-const { cloudflareUpload, cloudflareDelete } = require('./fileUploader');
+const {
+  cloudflareUpload,
+  cloudflareDelete,
+  cloudinaryVideoUpload,
+} = require('./fileUploader');
 
 //Secret to use stripe webhook
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -47,43 +40,6 @@ async function checkAdmin(req) {
     throw new Error('User not found');
   }
   return user.admin_access;
-}
-
-async function trimVideo(videoBuffer, mimeType) {
-  const startTime = '00:00:00';
-  const duration = 15; // seconds
-  const inputFormat = mimeType.split('/')[1];
-  const outputFormat = 'mp4';
-
-  return new Promise((resolve, reject) => {
-    // Turn the Buffer into a one-chunk Readable
-    const inputStream = Readable.from([videoBuffer]);
-
-    // collect the output
-    const chunks = [];
-    const command = ffmpeg(inputStream)
-      .inputFormat(inputFormat) // tell ffmpeg the incoming stream format
-      .setStartTime(startTime) // where to start
-      .setDuration(duration) // how long
-      .outputOptions([
-        '-movflags frag_keyframe+empty_moov', // allow streaming mp4
-      ])
-      .format(outputFormat) // output format
-      .on('error', (err) => {
-        console.error('FFmpeg failed:', err);
-        reject(new Error('Video trimming failed.'));
-      });
-
-    // pipe stdout to our collector
-    const ffStream = command.pipe();
-
-    ffStream.on('data', (chunk) => chunks.push(chunk));
-    ffStream.on('end', () => resolve(Buffer.concat(chunks)));
-    ffStream.on('error', (err) => {
-      console.error('Stream error:', err);
-      reject(new Error('Error while streaming trimmed video.'));
-    });
-  });
 }
 
 async function deleteFiles(urls) {
@@ -158,14 +114,7 @@ const courseController = {
           /\s+/g,
           '-'
         );
-        const trimmedVideoBuffer = await trimVideo(videoBuffer, video.mimetype);
-        const restrictedResult = await cloudflareUpload(
-          videoFileName,
-          video.mimetype,
-          trimmedVideoBuffer
-        );
-        if (restrictedResult.error) throw new Error(restrictedResult.error);
-        restricted_video_link = restrictedResult.data.url;
+        restricted_video_link = await cloudinaryVideoUpload(video_link, true);
         timings.restrictedVideo = Date.now() - restrictedStartTime;
         console.log(
           `Restricted video upload took ${timings.restrictedVideo}ms`

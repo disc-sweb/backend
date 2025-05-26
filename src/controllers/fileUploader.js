@@ -116,12 +116,13 @@ async function cloudinaryVideoUpload(filePath, trim = false) {
     ],
   };
   if (trim) {
-    opts.transformation = [{ duration: 120 }];
+    const trimLen = 15;
+    opts.transformation = [{ duration: trimLen }];
   }
 
   const result = await uploadLargePromise(filePath, opts);
   const url = result.secure_url;
-  return { url, publicId: result.public_id };
+  return url;
 }
 
 async function cloudinaryImageUpload(filePath) {
