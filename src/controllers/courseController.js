@@ -56,26 +56,25 @@ async function trimVideo(videoBuffer, mimeType) {
     const passThru = new PassThrough();
     const chunks = [];
 
-    // collect into chunks
+    // Collect data off the PassThrough readable side
     passThru.on('data', (chunk) => chunks.push(chunk));
-    passThru.on('error', reject);
+    passThru.on('error', (err) => reject(err));
+    passThru.on('end', () => resolve(Buffer.concat(chunks)));
 
+    // Drive ffmpeg into that PassThrough
     ffmpeg()
       .input(inputStream)
       .inputFormat(inputFmt)
-      .inputOptions([`-ss ${startTime}`])
+      .inputOptions([`-ss ${startTime}`]) // keyframe seek before decode
       .outputOptions([
         `-t ${duration}`,
-        '-c:v copy',
-        '-c:a copy',
-        '-movflags frag_keyframe+empty_moov',
+        '-c:v copy', // stream-copy video
+        '-c:a copy', // stream-copy audio
+        '-movflags frag_keyframe+empty_moov', // fragmented MP4
       ])
       .format('mp4')
       .on('error', reject)
-      // IMPORTANT: listen for “end” on the ffmpeg command:
-      .on('end', () => resolve(Buffer.concat(chunks)))
-      // pipe into our PassThrough:
-      .pipe(passThru, { end: true });
+      .pipe(passThru, { end: true }); // end the PassThrough when FFmpeg stdout ends
   });
 }
 
