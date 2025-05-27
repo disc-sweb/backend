@@ -2,7 +2,7 @@ const cloudinary = require('cloudinary').v2;
 const supabase = require('../config/supabase');
 
 const ffmpeg = require('fluent-ffmpeg');
-const { Readable } = require('stream');
+const { Readable, PassThrough } = require('stream');
 
 const STRIPE_API_KEY = process.env.STRIPE_API_KEY;
 const stripe = require('stripe')(STRIPE_API_KEY);
@@ -48,29 +48,34 @@ async function checkAdmin(req) {
 
 async function trimVideo(videoBuffer, mimeType) {
   const startTime = '00:00:00';
-  const duration = 120; // seconds
+  const duration = 120;
   const inputFmt = mimeType.split('/')[1];
-  const outputFmt = 'mp4';
 
   return new Promise((resolve, reject) => {
     const inputStream = Readable.from([videoBuffer]);
+    const passThru = new PassThrough();
     const chunks = [];
+
+    // collect into chunks
+    passThru.on('data', (chunk) => chunks.push(chunk));
+    passThru.on('error', reject);
 
     ffmpeg()
       .input(inputStream)
       .inputFormat(inputFmt)
-      .inputOptions([`-ss ${startTime}`]) // seek *before* decoding
+      .inputOptions([`-ss ${startTime}`])
       .outputOptions([
-        `-t ${duration}`, // trim duration
-        '-c:v copy', // video: copy packets
-        '-c:a copy', // audio: copy packets
-        '-movflags frag_keyframe+empty_moov', // for streaming MP4
+        `-t ${duration}`,
+        '-c:v copy',
+        '-c:a copy',
+        '-movflags frag_keyframe+empty_moov',
       ])
-      .format(outputFmt)
+      .format('mp4')
       .on('error', reject)
-      .pipe()
-      .on('data', (chunk) => chunks.push(chunk))
-      .on('end', () => resolve(Buffer.concat(chunks)));
+      // IMPORTANT: listen for “end” on the ffmpeg command:
+      .on('end', () => resolve(Buffer.concat(chunks)))
+      // pipe into our PassThrough:
+      .pipe(passThru, { end: true });
   });
 }
 
